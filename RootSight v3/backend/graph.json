@@ -1,0 +1,63 @@
+{
+  "nodes": [
+    {
+      "id": "Auth Service",
+      "type": "Service"
+    },
+    {
+      "id": "Google OAuth",
+      "type": "Vendor"
+    },
+    {
+      "id": "Login Service",
+      "type": "Service"
+    },
+    {
+      "id": "Registration Service",
+      "type": "Service"
+    },
+    {
+      "id": "Payment Service",
+      "type": "Service"
+    },
+    {
+      "id": "Razorpay",
+      "type": "Vendor"
+    },
+    {
+      "id": "Notification Service",
+      "type": "Service"
+    },
+    {
+      "id": "Twilio",
+      "type": "Vendor"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Auth Service",
+      "target": "Google OAuth",
+      "type": "uses"
+    },
+    {
+      "source": "Login Service",
+      "target": "Auth Service",
+      "type": "depends on"
+    },
+    {
+      "source": "Registration Service",
+      "target": "Auth Service",
+      "type": "depends on"
+    },
+    {
+      "source": "Payment Service",
+      "target": "Razorpay",
+      "type": "uses"
+    },
+    {
+      "source": "Notification Service",
+      "target": "Twilio",
+      "type": "uses"
+    }
+  ]
+}

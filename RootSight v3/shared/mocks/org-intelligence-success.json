@@ -1,0 +1,135 @@
+{
+  "spof": {
+    "id": "google-oauth",
+    "name": "Google OAuth",
+    "type": "Vendor",
+    "severity": "critical",
+    "dependentServices": [
+      "Login Service",
+      "Registration Service",
+      "Password Reset Service",
+      "Team Creation Service"
+    ],
+    "vendorSla": 98.2,
+    "description": "Four Tier-1 services depend directly on this vendor without a localized fallback protocol. The degrading vendor SLA (98.2%) is reducing overall system availability."
+  },
+  "ownershipBurden": [
+    {
+      "team": "Team Alpha",
+      "loadPercent": 80,
+      "loadStatus": "volatile",
+      "servicesOwned": [
+        "Auth Service",
+        "Login Service",
+        "Registration Service"
+      ]
+    },
+    {
+      "team": "Team Beta",
+      "loadPercent": 35,
+      "loadStatus": "stable",
+      "servicesOwned": [
+        "Payment Service",
+        "Billing Service"
+      ]
+    },
+    {
+      "team": "Platform Team",
+      "loadPercent": 52,
+      "loadStatus": "stable",
+      "servicesOwned": [
+        "API Gateway",
+        "Rate Limiter Service"
+      ]
+    }
+  ],
+  "keyResponders": [
+    {
+      "id": "rahul",
+      "name": "Rahul",
+      "team": "Team Alpha",
+      "status": "on-call",
+      "references": 12
+    },
+    {
+      "id": "alex",
+      "name": "Alex",
+      "team": "Platform Team",
+      "status": "in-incident",
+      "references": 15
+    },
+    {
+      "id": "priya",
+      "name": "Priya",
+      "team": "Team Beta",
+      "status": "idle",
+      "references": 8
+    }
+  ],
+  "vendorReliability": [
+    {
+      "id": "google-oauth",
+      "name": "Google OAuth",
+      "uptime": 98.2,
+      "status": "degraded",
+      "downtimeMinutes": 42
+    },
+    {
+      "id": "razorpay",
+      "name": "Razorpay",
+      "uptime": 99.99,
+      "status": "stable",
+      "downtimeMinutes": 0
+    },
+    {
+      "id": "twilio",
+      "name": "Twilio",
+      "uptime": 99.95,
+      "status": "stable",
+      "downtimeMinutes": 2
+    },
+    {
+      "id": "sendgrid",
+      "name": "SendGrid",
+      "uptime": 99.9,
+      "status": "stable",
+      "downtimeMinutes": 4
+    }
+  ],
+  "criticalChains": [
+    {
+      "id": "chain-auth",
+      "path": [
+        "Login Service",
+        "Auth Service",
+        "Google OAuth"
+      ],
+      "risk": "high",
+      "description": "Login Service has no resilient path to authentication when Google OAuth degrades."
+    },
+    {
+      "id": "chain-payment",
+      "path": [
+        "Billing Service",
+        "Payment Service",
+        "Razorpay"
+      ],
+      "risk": "medium",
+      "description": "Billing depends on a single payment vendor without an automated PSP failover."
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "rec-1",
+      "type": "vendor-resilience",
+      "priority": "high",
+      "message": "Introduce a local fallback (magic-link / TOTP) for Auth Service to remove the Google OAuth single point of failure."
+    },
+    {
+      "id": "rec-2",
+      "type": "ownership-rebalance",
+      "priority": "medium",
+      "message": "Reassign Registration Service ownership from Team Alpha to Team Beta to balance the 80% volatile operational load."
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "INTELLIGENCE_UNAVAILABLE",
+    "message": "Organizational intelligence could not be generated. The dependency graph is empty or too sparse to detect structural risks."
+  }
+}
