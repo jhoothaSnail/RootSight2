@@ -345,6 +345,16 @@ const driver = neo4j.driver(
   neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
 );
 
+async function clearAuraDB() {
+  const session = driver.session();
+  try {
+    await session.run(`MATCH (n) DETACH DELETE n`);
+    console.log('[AuraDB] ✓ Graph cleared — all nodes and relationships deleted');
+  } finally {
+    await session.close();
+  }
+}
+
 async function storeInAuraDB(data) {
   const session = driver.session();
 
@@ -535,6 +545,7 @@ app.post("/api/upload", upload.any(), async (req, res) => {
     // referencing entities from other documents are validated against the union.
     const extracted = sanitizeEntities(accumulator);
 
+    await clearAuraDB();
     await storeInAuraDB(extracted);
 
     const summary = {
@@ -738,24 +749,67 @@ async function analyzeFromGraph(events) {
 
 // Generates a concise, professional 2-3 sentence explanation grounded in the
 // resolved root cause and the raw symptoms. Falls back to the curated text.
-async function geminiExplanation(base, events) {
-  if (!process.env.GEMINI_API_KEY) return base.explanation;
-  const symptoms = events.map((e) => `- ${e.message}`).join("\n");
-  const prompt = `You are an incident response analyst writing for an SRE audience.
-Given the symptoms and the identified root cause, write a concise, professional
-2-3 sentence explanation of what happened and why. No preamble, no markdown,
-no bullet points - just the explanation paragraph.
+async function geminiAnalysis(graph, events) {
+  if (!process.env.GEMINI_API_KEY) return null;
 
-Root cause: ${base.rootCause} (${base.rootCauseType})
-Confidence: ${base.confidence}%
-Affected services: ${(base.affectedServices || []).join(", ") || "n/a"}
-Symptoms:
-${symptoms}`;
+  const nodesSummary = graph.nodes
+    .map((n) => `- ${n.name} (${n.type})`)
+    .join("\n");
+  const relsSummary = graph.relationships
+    .map((r) => `- ${r.source} --[${r.type}]--> ${r.target}`)
+    .join("\n");
+  const eventsSummary = events.map((e) => `- [${e.type}] ${e.message} (source: ${e.source || "unknown"})`).join("\n");
+
+  const prompt = `You are an expert SRE incident analyst. You have been given a live dependency graph and a stream of incident events. Your job is to identify the root cause and blast radius.
+
+DEPENDENCY GRAPH NODES:
+${nodesSummary}
+
+DEPENDENCY GRAPH RELATIONSHIPS:
+${relsSummary}
+
+INCIDENT EVENTS:
+${eventsSummary}
+
+Respond with ONLY a valid JSON object — no markdown, no backticks, no explanation outside the JSON. Use exactly this structure:
+{
+  "rootCause": "Name of the root cause node exactly as it appears in the graph",
+  "rootCauseType": "Service | Vendor | Database | Team",
+  "confidence": <integer 0-100>,
+  "confidenceLabel": "High | Medium | Low",
+  "affectedServices": ["exact service names from graph"],
+  "affectedVendors": ["exact vendor names from graph"],
+  "affectedTeams": ["exact team names from graph"],
+  "impactRadius": {
+    "services": <integer>,
+    "teams": <integer>,
+    "vendors": <integer>,
+    "estimatedUsers": <integer>
+  },
+  "explanation": "2-3 sentence professional explanation of what happened and why, grounded in the graph.",
+  "evidence": [
+    "Specific evidence item 1 referencing graph nodes or relationships",
+    "Specific evidence item 2",
+    "Specific evidence item 3"
+  ],
+  "historicalMatch": null,
+  "suggestedRunbook": null
+}`;
 
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const result = await model.generateContent(prompt);
-  const text = (result.response.text() || "").trim();
-  return text.length > 20 ? text : base.explanation;
+  const raw = (result.response.text() || "").trim();
+
+  try {
+    const clean = raw.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(clean);
+    // Validate required fields exist
+    if (!parsed.rootCause || typeof parsed.confidence !== "number") return null;
+    return parsed;
+  } catch (e) {
+    console.warn("[Analyze] Gemini returned invalid JSON:", e.message);
+    return null;
+  }
 }
 
 // ─── Organizational Intelligence ──────────────────────────────────────────────
@@ -830,12 +884,14 @@ async function computeOrgIntelligence() {
 app.get("/api/graph", async (_req, res) => {
   try {
     const graph = await fetchGraphFromNeo4j();
-    if (!graph.nodes.length) throw new Error("empty graph");
+    // Return live data even if empty — let the frontend show the EmptyState.
+    // Only fall back to mock on a genuine Neo4j connectivity failure.
     deriveStatus(graph.nodes, graph.relationships);
     console.log(`[Graph] ✓ ${graph.nodes.length} nodes, ${graph.relationships.length} relationships`);
     return res.json(graph);
   } catch (err) {
-    console.warn("[Graph] ⚠ Falling back to mock:", err.message);
+    // Only reach here on a Neo4j driver / network failure, not an empty graph.
+    console.warn("[Graph] ⚠ Neo4j unreachable, falling back to mock:", err.message);
     const mock = loadMock("graph-success");
     if (mock) return res.json(mock);
     return structuredError(
@@ -849,24 +905,103 @@ app.get("/api/graph", async (_req, res) => {
 
 // ─── POST /api/simulate ──────────────────────────────────────────────────────
 
-app.post("/api/simulate", (req, res) => {
+// ─── POST /api/simulate ──────────────────────────────────────────────────────
+
+app.post("/api/simulate", async (req, res) => {
   const { scenario } = req.body || {};
-  const scen = getScenario(scenario);
-  if (!scen) {
-    return structuredError(
-      res,
-      400,
-      "SCENARIO_NOT_FOUND",
-      `The requested simulation scenario is not recognized. Valid scenarios are: ${listScenarioNames().join(", ")}.`
+  if (!scenario) {
+    return structuredError(res, 400, "SCENARIO_NOT_FOUND", "No scenario name provided.");
+  }
+
+  try {
+    const graph = await fetchGraphFromNeo4j();
+
+    if (!graph.nodes.length) throw new Error("empty graph");
+
+    // Parse the scenario name to find the target node.
+    // Convention: scenario name is "<NodeName> Failure", e.g. "Stripe Failure"
+    const targetName = scenario.replace(/\s+failure$/i, "").trim().toLowerCase();
+    const targetNode = graph.nodes.find((n) => n.name.toLowerCase() === targetName);
+
+    // Find all services that depend on the target node (directly or transitively).
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const dependents = new Map(); // nodeId -> [dependentNodeIds]
+    for (const rel of graph.relationships) {
+      if (!DEPENDENCY_REL_TYPES.has(rel.type)) continue;
+      if (!dependents.has(rel.target)) dependents.set(rel.target, []);
+      dependents.get(rel.target).push(rel.source);
+    }
+
+    // BFS from target to find all affected nodes
+    const affectedIds = new Set();
+    const queue = [targetNode ? targetNode.id : graph.nodes[0].id];
+    while (queue.length) {
+      const id = queue.shift();
+      if (affectedIds.has(id)) continue;
+      affectedIds.add(id);
+      for (const dep of dependents.get(id) || []) queue.push(dep);
+    }
+    const affectedNodes = [...affectedIds]
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .filter((n) => n.type === "Service");
+
+    const rootName = targetNode ? targetNode.name : graph.nodes[0].name;
+    const now = new Date().toISOString();
+    const incidentId = `INC-${Math.floor(Math.random() * 900) + 100}`;
+
+    // Build dynamic events from the real graph nodes
+    const events = [];
+    events.push({
+      id: "evt1",
+      type: "alert",
+      message: `${rootName} is returning errors — dependency health check failed`,
+      timestamp: now,
+      source: rootName,
+    });
+
+    affectedNodes.slice(0, 4).forEach((node, i) => {
+      const types = ["log", "alert", "ticket", "log"];
+      const messages = [
+        `${node.name} upstream dependency unavailable — requests timing out`,
+        `${node.name} error rate exceeded threshold — cascading from ${rootName}`,
+        `On-call reports ${node.name} is degraded`,
+        `${node.name} connection to ${rootName} lost`,
+      ];
+      events.push({
+        id: `evt${i + 2}`,
+        type: types[i] || "log",
+        message: messages[i] || `${node.name} impacted by ${rootName} failure`,
+        timestamp: new Date(Date.now() + (i + 1) * 20000).toISOString(),
+        source: node.name,
+      });
+    });
+
+    events.push({
+      id: `evt${events.length + 1}`,
+      type: "ticket",
+      message: `P1 incident opened: ${rootName} failure affecting ${affectedNodes.length} downstream service(s)`,
+      timestamp: new Date(Date.now() + 120000).toISOString(),
+      source: "Support Desk",
+    });
+
+    console.log(`[Simulate] ✓ ${scenario} — ${events.length} events (graph-driven)`);
+    return res.json({ scenario, incidentId, events });
+
+  } catch (err) {
+    // Fallback: try the hardcoded scenario library
+    const scen = getScenario(scenario);
+    if (scen) {
+      console.warn(`[Simulate] ⚠ Graph unavailable, using hardcoded scenario: ${scenario}`);
+      return res.json({ scenario: scen.label, incidentId: scen.incidentId, events: scen.events });
+    }
+    return structuredError(res, 400, "SCENARIO_NOT_FOUND",
+      `Could not simulate "${scenario}". Upload documents first to build the graph.`
     );
   }
-  console.log(`[Simulate] ✓ ${scen.label} — ${scen.events.length} events`);
-  return res.json({
-    scenario: scen.label,
-    incidentId: scen.incidentId,
-    events: scen.events,
-  });
 });
+
+// ─── POST /api/analyze ─────────────────────────────────────────────────────────
 
 // ─── POST /api/analyze ─────────────────────────────────────────────────────────
 
@@ -874,32 +1009,60 @@ app.post("/api/analyze", async (req, res) => {
   const { events = [], scenario } = req.body || {};
 
   if (!Array.isArray(events) || events.length === 0) {
-    if (!scenario) {
-      return structuredError(
-        res,
-        400,
-        "ANALYSIS_FAILED",
-        "Root cause analysis could not be completed. The incident event set was empty or could not be correlated against the dependency graph."
-      );
-    }
+    return structuredError(
+      res,
+      400,
+      "ANALYSIS_FAILED",
+      "Root cause analysis could not be completed. The incident event set was empty."
+    );
   }
 
   try {
-    const scen = getScenario(scenario);
-    let base = scen ? { ...scen.analysis } : await analyzeFromGraph(events);
-    if (!base) base = loadMock("analyze-success");
-    if (!base) throw new Error("no analysis basis");
-
+    // Step 1: Always try live graph + Gemini first
+    let graph = null;
     try {
-      base.explanation = await geminiExplanation(base, events);
+      graph = await fetchGraphFromNeo4j();
     } catch (e) {
-      console.warn("[Analyze] Gemini explanation failed, using curated text:", e.message);
+      console.warn("[Analyze] Neo4j unavailable:", e.message);
     }
 
-    console.log(`[Analyze] ✓ Root cause: ${base.rootCause} (${base.confidence}%)`);
-    return res.json(base);
+    if (graph && graph.nodes.length > 0) {
+      const geminiResult = await geminiAnalysis(graph, events);
+      if (geminiResult) {
+        console.log(`[Analyze] ✓ Gemini graph analysis — root cause: ${geminiResult.rootCause} (${geminiResult.confidence}%)`);
+        return res.json(geminiResult);
+      }
+
+      // Gemini failed or returned bad JSON — fall back to graph traversal
+      const traversalResult = await analyzeFromGraph(events);
+      if (traversalResult) {
+        console.log(`[Analyze] ✓ Graph traversal — root cause: ${traversalResult.rootCause} (${traversalResult.confidence}%)`);
+        return res.json(traversalResult);
+      }
+    }
+
+    // Step 2: Try hardcoded scenario as last resort before mock
+    if (scenario) {
+      const scen = getScenario(scenario);
+      if (scen) {
+        console.warn(`[Analyze] ⚠ Graph empty/unavailable, using hardcoded scenario: ${scenario}`);
+        return res.json(scen.analysis);
+      }
+    }
+
+    // Step 3: Absolute fallback — mock
+    console.warn("[Analyze] ⚠ All analysis paths failed, serving mock");
+    const mock = loadMock("analyze-success");
+    if (mock) return res.json(mock);
+
+    return structuredError(
+      res,
+      500,
+      "ANALYSIS_FAILED",
+      "Root cause analysis could not be completed for the provided incident events."
+    );
   } catch (err) {
-    console.warn("[Analyze] ⚠ Falling back to mock:", err.message);
+    console.warn("[Analyze] ⚠ Unexpected error:", err.message);
     const mock = loadMock("analyze-success");
     if (mock) return res.json(mock);
     return structuredError(
@@ -908,6 +1071,36 @@ app.post("/api/analyze", async (req, res) => {
       "ANALYSIS_FAILED",
       "Root cause analysis could not be completed for the provided incident events."
     );
+  }
+});
+
+// ─── GET /api/scenarios ────────────────────────────────────────────────────────
+// Returns dynamic scenario names derived from the current Neo4j graph.
+// Vendors and Databases become failure scenarios (e.g. "Stripe Failure").
+// Falls back to the hardcoded scenario list if the graph is unavailable.
+
+app.get("/api/scenarios", async (_req, res) => {
+  try {
+    const graph = await fetchGraphFromNeo4j();
+    if (!graph.nodes.length) throw new Error("empty graph");
+
+    const scenarioNodes = graph.nodes.filter(
+      (n) => n.type === "Vendor" || n.type === "Database" || n.type === "Service"
+    );
+
+    // Prefer vendors and databases first as they are the most common root causes
+    const ordered = [
+      ...scenarioNodes.filter((n) => n.type === "Vendor"),
+      ...scenarioNodes.filter((n) => n.type === "Database"),
+      ...scenarioNodes.filter((n) => n.type === "Service").slice(0, 3),
+    ];
+
+    const names = ordered.map((n) => `${n.name} Failure`);
+    console.log(`[Scenarios] ✓ ${names.length} dynamic scenarios from graph`);
+    return res.json({ scenarios: names });
+  } catch (err) {
+    console.warn("[Scenarios] ⚠ Graph unavailable, using hardcoded list:", err.message);
+    return res.json({ scenarios: listScenarioNames() });
   }
 });
 
@@ -931,20 +1124,206 @@ app.get("/api/org-intelligence", async (_req, res) => {
   }
 });
 
+// ─── Runbook Generation ────────────────────────────────────────────────────────
+
+async function generateRunbooksWithGemini(graph) {
+  const nodesSummary = graph.nodes
+    .map((n) => `- ${n.name} (${n.type})`)
+    .join("\n");
+  const relsSummary = graph.relationships
+    .map((r) => `- ${r.source} --[${r.type}]--> ${r.target}`)
+    .join("\n");
+
+  const prompt = `You are an expert SRE runbook author. You have been given a live dependency graph extracted from company documents. Generate practical, actionable AI remediation runbooks based ONLY on the entities and relationships present in this graph.
+
+DEPENDENCY GRAPH NODES:
+${nodesSummary}
+
+DEPENDENCY GRAPH RELATIONSHIPS:
+${relsSummary}
+
+Generate between 3 and 6 runbooks. Each runbook must target a specific node from the graph (a Vendor, Database, or Service). Do NOT invent entities that are not in the graph above.
+
+For each runbook:
+- "id": sequential ID like "RB-001", "RB-002", etc.
+- "title": specific to the node, e.g. "Stripe Payment Gateway Failover" or "MongoDB Connection Pool Reset"
+- "trigger": a concrete monitoring condition, e.g. "Stripe API latency > 2000ms OR 5xx error rate > 5%"
+- "confidence": integer 0-100 representing how well-defined this runbook is based on the graph
+- "auto": true if this is safe to auto-execute (low risk, reversible), false if it requires human approval (high risk, destructive, or irreversible)
+- "status": "Ready to Execute" if auto=true, "Manual Approval Required" if auto=false
+- "relatedService": name of the primary internal service affected (from graph), or null
+- "relatedVendor": name of the vendor involved (from graph), or null
+- "owningTeam": name of the team that owns the affected service (from graph), or null
+- "actions": array of 3-5 specific, concrete remediation steps using exact names from the graph
+
+Respond with ONLY a valid JSON object. No markdown, no backticks, no explanation outside the JSON.
+
+{
+  "runbooks": [
+    {
+      "id": "RB-001",
+      "title": "string",
+      "trigger": "string",
+      "confidence": 85,
+      "auto": true,
+      "status": "Ready to Execute",
+      "relatedService": "string or null",
+      "relatedVendor": "string or null",
+      "owningTeam": "string or null",
+      "actions": ["step 1", "step 2", "step 3"]
+    }
+  ]
+}`;
+
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const result = await model.generateContent(prompt);
+  const raw = (result.response.text() || "").trim();
+
+  const clean = raw.replace(/```json|```/g, "").trim();
+  const parsed = JSON.parse(clean);
+  if (!Array.isArray(parsed.runbooks) || parsed.runbooks.length === 0) {
+    throw new Error("Gemini returned empty runbooks array");
+  }
+  return parsed.runbooks;
+}
+
+function generateRunbooksDeterministic(graph) {
+  // Pure graph traversal fallback when Gemini is unavailable.
+  // Produces one runbook per Vendor/Database node, up to 6.
+  const candidates = graph.nodes.filter(
+    (n) => n.type === "Vendor" || n.type === "Database" || n.type === "Service"
+  );
+
+  // Find which services depend on each candidate
+  const dependentsMap = new Map();
+  for (const rel of graph.relationships) {
+    if (!DEPENDENCY_REL_TYPES.has(rel.type)) continue;
+    if (!dependentsMap.has(rel.target)) dependentsMap.set(rel.target, []);
+    dependentsMap.get(rel.target).push(rel.source);
+  }
+
+  // Find team ownership
+  const ownerMap = new Map();
+  for (const rel of graph.relationships) {
+    if (rel.type === "OWNED_BY") ownerMap.set(rel.source, rel.target);
+  }
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+
+  const ordered = [
+    ...candidates.filter((n) => n.type === "Vendor"),
+    ...candidates.filter((n) => n.type === "Database"),
+    ...candidates.filter((n) => n.type === "Service"),
+  ].slice(0, 6);
+
+  return ordered.map((node, i) => {
+    const deps = (dependentsMap.get(node.id) || [])
+      .map((id) => nodeById.get(id))
+      .filter(Boolean);
+    const primaryService = deps.find((n) => n.type === "Service") || null;
+    const ownerTeamId = primaryService ? ownerMap.get(primaryService.id) : null;
+    const ownerTeam = ownerTeamId ? nodeById.get(ownerTeamId) : null;
+
+    const isHighRisk = node.type === "Database";
+    const confidence = node.type === "Vendor" ? 88 : node.type === "Database" ? 82 : 75;
+
+    const triggerMap = {
+      Vendor: `${node.name} API error rate > 5% OR latency > 2000ms`,
+      Database: `${node.name} active connections > 85% OR query latency > 1000ms`,
+      Service: `${node.name} health check failing OR error rate > 10%`,
+    };
+
+    const actionMap = {
+      Vendor: [
+        `Activate circuit breaker for all outbound calls to ${node.name}.`,
+        `Switch ${primaryService ? primaryService.name : "dependent services"} to fallback/degraded mode.`,
+        `Alert ${ownerTeam ? ownerTeam.name : "on-call team"} via PagerDuty.`,
+        `Monitor ${node.name} status page for upstream resolution.`,
+        `Re-enable ${node.name} integration once error rate drops below 1%.`,
+      ],
+      Database: [
+        `Force drain idle connections from ${node.name} connection pool.`,
+        `Scale read-replica count by +2 for ${node.name}.`,
+        `Disable long-polling and batch queries temporarily.`,
+        `Notify ${ownerTeam ? ownerTeam.name : "database team"} to investigate slow queries.`,
+        `Re-enable full query load once connection count drops below 60%.`,
+      ],
+      Service: [
+        `Isolate ${node.name} from upstream traffic via load balancer.`,
+        `Trigger rolling restart of ${node.name} pods/instances.`,
+        `Verify all downstream dependencies of ${node.name} are healthy.`,
+        `Notify ${ownerTeam ? ownerTeam.name : "on-call team"} of degradation.`,
+        `Re-route traffic back to ${node.name} once health checks pass.`,
+      ],
+    };
+
+    return {
+      id: `RB-${String(i + 1).padStart(3, "0")}`,
+      title: `${node.name} ${node.type === "Vendor" ? "Failover" : node.type === "Database" ? "Recovery" : "Restart"}`,
+      trigger: triggerMap[node.type] || `${node.name} health check failing`,
+      confidence,
+      auto: !isHighRisk,
+      status: isHighRisk ? "Manual Approval Required" : "Ready to Execute",
+      relatedService: primaryService ? primaryService.name : null,
+      relatedVendor: node.type === "Vendor" ? node.name : null,
+      owningTeam: ownerTeam ? ownerTeam.name : null,
+      actions: actionMap[node.type] || [`Restart ${node.name} and verify health.`],
+    };
+  });
+}
+
 // ─── GET /api/runbooks ─────────────────────────────────────────────────────────
 
-app.get("/api/runbooks", (_req, res) => {
-  const mock = loadMock("runbooks-success");
-  if (mock) {
-    console.log(`[Runbooks] ✓ ${mock.runbooks.length} runbooks served`);
-    return res.json(mock);
+app.get("/api/runbooks", async (_req, res) => {
+  try {
+    // 1. Fetch the live graph — same data source every other endpoint uses.
+    const graph = await fetchGraphFromNeo4j();
+    deriveStatus(graph.nodes, graph.relationships);
+
+    // 2. Guard: if the graph is empty, no documents have been ingested yet.
+    if (!graph.nodes.length) {
+      console.warn("[Runbooks] ⚠ Graph is empty — no documents ingested yet");
+      return structuredError(
+        res,
+        503,
+        "RUNBOOK_GENERATION_FAILED",
+        "No architecture documents have been ingested yet. Upload your documents in the Knowledge Ingestion step first."
+      );
+    }
+
+    // 3. Try Gemini AI generation first (uses the live graph, not hardcoded data).
+    let runbooks;
+    try {
+      runbooks = await generateRunbooksWithGemini(graph);
+      console.log(`[Runbooks] ✓ Gemini generated ${runbooks.length} runbooks from live graph`);
+    } catch (geminiErr) {
+      // 4. Gemini unavailable — fall back to pure graph traversal (still dynamic).
+      console.warn("[Runbooks] ⚠ Gemini unavailable, using deterministic fallback:", geminiErr.message);
+      runbooks = generateRunbooksDeterministic(graph);
+      console.log(`[Runbooks] ✓ Deterministic generated ${runbooks.length} runbooks from live graph`);
+    }
+
+    if (!runbooks || runbooks.length === 0) {
+      throw new Error("No runbooks could be generated from the current graph");
+    }
+
+    return res.json({ runbooks });
+
+  } catch (err) {
+    // 5. Neo4j unreachable — last resort: serve the offline mock so the UI
+    //    degrades gracefully instead of showing a hard error.
+    console.warn("[Runbooks] ⚠ Neo4j unreachable, falling back to mock:", err.message);
+    const mock = loadMock("runbooks-success");
+    if (mock) {
+      console.log(`[Runbooks] ✓ ${mock.runbooks.length} mock runbooks served (offline mode)`);
+      return res.json(mock);
+    }
+    return structuredError(
+      res,
+      503,
+      "RUNBOOK_GENERATION_FAILED",
+      "Remediation runbooks could not be generated. The dependency graph is unavailable or no documents have been ingested yet."
+    );
   }
-  return structuredError(
-    res,
-    500,
-    "RUNBOOK_GENERATION_FAILED",
-    "Remediation runbooks could not be generated. No historical incidents or runbook documents were found for the identified root cause."
-  );
 });
 
 // ─── Multer + global error handler ───────────────────────────────────────────

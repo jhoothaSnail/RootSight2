@@ -181,8 +181,40 @@ export interface RunbooksResponse {
   runbooks: Runbook[];
 }
 
-export type ScenarioName =
-  | 'OAuth Failure'
-  | 'Database Failure'
-  | 'Payment Gateway Failure'
-  | 'Twilio Failure';
+export type RunbookPhase =
+  | 'waiting'       // auto: waiting for trigger
+  | 'monitoring'    // auto: actively monitoring
+  | 'idle'          // manual: ready
+  | 'executing'
+  | 'success'
+  | 'failed'
+  | 'manual_pending'; // manual approval required
+
+export interface ExecutionLogEntry {
+  time: string;
+  message: string;
+}
+
+export interface ExecutionRecord {
+  runbookId: string;
+  status: 'success' | 'failed';
+  completedAt: string;
+  duration: number;
+  logs: ExecutionLogEntry[];
+  failedStep?: number;
+}
+
+export interface ExecutionLogEntry {
+  time: string;
+  message: string;
+}
+
+export interface ExecutionRecord {
+  runbookId: string;
+  status: 'success' | 'failed';
+  completedAt: string;
+  duration: number;
+  failedStep?: number;
+}
+
+export type ScenarioName = string;

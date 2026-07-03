@@ -158,3 +158,10 @@ export function getRunbooks(): Promise<RunbooksResponse> {
     () => runbooksMock as RunbooksResponse
   );
 }
+
+export function getScenarios(): Promise<{ scenarios: string[] }> {
+  return withFallback<{ scenarios: string[] }>(
+    () => apiFetch<{ scenarios: string[] }>('/api/scenarios'),
+    () => ({ scenarios: ['OAuth Failure', 'Database Failure', 'Payment Gateway Failure', 'Twilio Failure'] })
+  );
+}
