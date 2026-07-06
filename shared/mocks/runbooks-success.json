@@ -1,0 +1,52 @@
+{
+  "runbooks": [
+    {
+      "id": "RB-001",
+      "title": "Google OAuth Fallback to Email Protocol",
+      "trigger": "OAuth Gateway >= 500ms latency OR 502/504 errors",
+      "confidence": 96,
+      "auto": true,
+      "status": "Ready to Execute",
+      "relatedService": "Auth Service",
+      "relatedVendor": "Google OAuth",
+      "owningTeam": "Team Alpha",
+      "actions": [
+        "Isolate OAuth ingress routes.",
+        "Toggle feature flag: `enable_magic_link_auth` to TRUE.",
+        "Notify Team Alpha via PagerDuty."
+      ]
+    },
+    {
+      "id": "RB-002",
+      "title": "Database Connection Pool Reset",
+      "trigger": "PostgreSQL active connections > 85%",
+      "confidence": 81,
+      "auto": false,
+      "status": "Manual Approval Required",
+      "relatedService": "Payment Service",
+      "relatedVendor": null,
+      "owningTeam": "Team Beta",
+      "actions": [
+        "Force drain idle connections.",
+        "Scale read-replicas by +2 nodes.",
+        "Disable long-polling queries temporarily."
+      ]
+    },
+    {
+      "id": "RB-003",
+      "title": "Aggressive Traffic Shedding",
+      "trigger": "API Gateway Memory Load > 90%",
+      "confidence": 99,
+      "auto": true,
+      "status": "Active Monitoring",
+      "relatedService": "API Gateway",
+      "relatedVendor": null,
+      "owningTeam": "Platform Team",
+      "actions": [
+        "Drop all unauthenticated traffic.",
+        "Rate limit tier-free users to 5 req/min.",
+        "Cache /products endpoint at Edge."
+      ]
+    }
+  ]
+}

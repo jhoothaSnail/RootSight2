@@ -1,0 +1,47 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "server": "node backend/server.js",
+    "dev:all": "concurrently -n web,api -c cyan,magenta \"npm run dev\" \"npm run server\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "load:graph": "node backend/loadGraph.js",
+    "test:neo4j": "node backend/testNeo4j.js",
+    "test:gemini": "node backend/testGemini.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@google/generative-ai": "^0.24.1",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^10.0.3",
+    "cors": "^2.8.6",
+    "csv-parse": "^7.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^4.22.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "multer": "^2.2.0",
+    "neo4j-driver": "^6.1.0",
+    "pdf-parse": "^2.4.5",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  }
+}

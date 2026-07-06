@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "RUNBOOK_GENERATION_FAILED",
+    "message": "Remediation runbooks could not be generated. No historical incidents or runbook documents were found for the identified root cause."
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "ANALYSIS_FAILED",
+    "message": "Root cause analysis could not be completed. The incident event set was empty or could not be correlated against the dependency graph."
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "GRAPH_UNAVAILABLE",
+    "message": "The dependency graph could not be retrieved. Neo4j may be unreachable or no organizational documents have been ingested yet."
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "success": false,
+  "message": "Incident history could not be retrieved. The database is unavailable or no incidents have been recorded yet."
+}

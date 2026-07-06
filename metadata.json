@@ -1,0 +1,6 @@
+{
+  "name": "RootSight",
+  "description": "AI-powered operational intelligence platform mapping system symptoms to root causes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

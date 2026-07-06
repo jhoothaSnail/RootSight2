@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, monospace;
+}
+
+html, body, #root {
+  @apply h-full w-full m-0 p-0 overflow-hidden;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-50 font-sans antialiased;
+}
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-zinc-800 rounded-full;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-700;
+  }
+  
+  @keyframes slide-up {
+    0% { transform: translateY(10px); }
+    100% { transform: translateY(0); }
+  }
+
+  @keyframes flow-down {
+    0% { background-position: 0 0px; }
+    100% { background-position: 0 20px; }
+  }
+}

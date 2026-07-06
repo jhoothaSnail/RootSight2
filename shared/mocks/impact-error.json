@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "IMPACT_UNAVAILABLE",
+    "message": "Blast-radius impact could not be computed. The dependency graph may be empty, unreachable, or the requested node id was not found."
+  }
+}

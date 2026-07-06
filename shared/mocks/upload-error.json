@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "DOCUMENT_PARSE_FAILED",
+    "message": "Unable to extract information from the uploaded architecture document. The file may be corrupted, password-protected, or in an unsupported format."
+  }
+}

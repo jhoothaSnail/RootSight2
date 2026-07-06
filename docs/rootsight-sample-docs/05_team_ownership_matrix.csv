@@ -1,0 +1,8 @@
+team_name,team_lead,engineers,slack_channel,pagerduty_policy,services_owned,databases_owned,on_call_rotation_days,escalation_contact
+Team Identity,Priya Sharma,"Priya Sharma, Arjun Mehta",#team-identity,P1 — Identity On-Call,"auth-service, user-service, session-service, kyc-service","postgresql-auth, postgresql-users, redis-session",7,Kavya Reddy (Platform Lead)
+Team Payments,Siddharth Nair,"Siddharth Nair, Neha Kapoor, Aditya Kumar",#team-payments,P1 — Payments On-Call,"payment-service, ledger-service, reconciliation-service, payout-service, fx-service","postgresql-payments, postgresql-ledger, redis-fx, kafka-payments",7,CTO
+Team Lending,Vikram Rao,"Vikram Rao",#team-lending,P2 — Lending On-Call,"loan-service, disbursement-service","postgresql-lending, kafka-lending",7,Siddharth Nair (Payments Lead)
+Team Risk,Meera Iyer,"Meera Iyer",#team-risk,P2 — Risk On-Call,"fraud-detection-service, underwriting-service, ml-pipeline-service","postgresql-risk, redis-fraud, s3-models",7,Siddharth Nair (Payments Lead)
+Team Compliance,Rohan Verma,"Rohan Verma",#team-compliance,P2 — Compliance On-Call,"kyc-service, audit-service","postgresql-compliance, postgresql-audit, kafka-audit",7,Legal & Compliance Director
+Team Platform,Kavya Reddy,"Kavya Reddy, Ananya Singh, Arjun Mehta",#team-platform,P1 — Platform On-Call,"api-gateway, rate-limiter-service, config-service, notification-service, webhook-service, search-service","redis-ratelimit, redis-webhook, redis-config, redis-analytics, postgresql-notifications, postgresql-config, kafka-notifications, elasticsearch",5,CTO
+Team Data,Rahul Gupta,"Rahul Gupta",#team-data,P3 — Data On-Call,"reporting-service, analytics-service","redshift-warehouse, s3-reports, s3-documents",7,Kavya Reddy (Platform Lead)

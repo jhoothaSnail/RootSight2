@@ -1,0 +1,172 @@
+Company: StreamSphere Media Pvt. Ltd.
+
+Business Domain:
+Video Streaming Platform
+
+====================================================
+CORE SERVICES
+====================================================
+
+Web Frontend
+Mobile API
+Identity Service
+Profile Service
+Content Service
+Recommendation Engine
+Streaming Gateway
+Encoding Pipeline
+Search Service
+Subscription Service
+Billing Service
+Notification Service
+Analytics Pipeline
+
+====================================================
+DATA LAYER
+====================================================
+
+Cassandra Cluster
+Redis Cluster
+OpenSearch Cluster
+ClickHouse Analytics DB
+
+====================================================
+CLOUD INFRASTRUCTURE
+====================================================
+
+AWS ECS
+CloudFront CDN
+Amazon S3
+Kafka Cluster
+
+====================================================
+THIRD-PARTY SERVICES
+====================================================
+
+Auth0
+Mux Video
+SendGrid
+OneSignal
+Chargebee
+Datadog
+
+====================================================
+ARCHITECTURE FLOW
+====================================================
+
+User
+
+↓
+
+Web Frontend
+
+↓
+
+Mobile API
+
+↓
+
+Identity Service
+
+↓
+
+Auth0
+
+Identity Service
+
+↓
+
+Profile Service
+
+↓
+
+Cassandra Cluster
+
+Profile Service
+
+↓
+
+Redis Cluster
+
+Content Service
+
+↓
+
+Streaming Gateway
+
+↓
+
+Mux Video
+
+Content Service
+
+↓
+
+Search Service
+
+↓
+
+OpenSearch Cluster
+
+Subscription Service
+
+↓
+
+Billing Service
+
+↓
+
+Chargebee
+
+Notification Service
+
+↓
+
+SendGrid
+
+Notification Service
+
+↓
+
+OneSignal
+
+Analytics Pipeline
+
+↓
+
+Kafka Cluster
+
+↓
+
+ClickHouse Analytics DB
+
+====================================================
+REDUNDANCY
+====================================================
+
+Redis Cluster
+Multi-node deployment.
+
+Kafka Cluster
+Three brokers.
+
+Amazon S3
+Cross-region replication enabled.
+
+OpenSearch
+Three-node cluster.
+
+ClickHouse
+Replicated.
+
+Cassandra Cluster
+Multi-region deployment.
+
+Mux Video
+NO backup streaming provider.
+
+Auth0
+NO secondary identity provider.
+
+Chargebee
+NO backup billing provider.

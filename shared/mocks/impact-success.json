@@ -1,0 +1,23 @@
+{
+  "nodeId": "auth-service",
+  "nodeName": "Auth Service",
+  "nodeType": "Service",
+  "affectedServices": [
+    { "id": "login-service", "name": "Login Service", "type": "Service" },
+    { "id": "registration-service", "name": "Registration Service", "type": "Service" },
+    { "id": "password-reset-service", "name": "Password Reset Service", "type": "Service" },
+    { "id": "team-creation-service", "name": "Team Creation Service", "type": "Service" },
+    { "id": "api-gateway", "name": "API Gateway", "type": "Service" },
+    { "id": "session-service", "name": "Session Service", "type": "Service" },
+    { "id": "user-service", "name": "User Service", "type": "Service" },
+    { "id": "notification-service", "name": "Notification Service", "type": "Service" }
+  ],
+  "affectedTeams": [
+    { "id": "team-alpha", "name": "Team Alpha", "type": "Team" },
+    { "id": "platform-team", "name": "Platform Team", "type": "Team" }
+  ],
+  "affectedVendors": [],
+  "totalAffected": 10,
+  "severity": "critical",
+  "description": "If Auth Service fails, 8 services across 2 teams would be directly or transitively impacted."
+}

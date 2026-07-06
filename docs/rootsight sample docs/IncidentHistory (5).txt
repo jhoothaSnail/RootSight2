@@ -1,0 +1,136 @@
+Incident ID: SS-101
+
+Date:
+08 January 2026
+
+Severity:
+Critical
+
+Affected Component:
+Mux Video
+
+Impact:
+All video playback failed globally.
+
+Duration:
+54 minutes
+
+Root Cause:
+Vendor outage.
+
+Resolution:
+Traffic restored after vendor recovery.
+
+------------------------------------------------
+
+Incident ID: SS-102
+
+Date:
+17 January 2026
+
+Severity:
+High
+
+Affected Component:
+Chargebee
+
+Impact:
+Premium subscriptions could not be renewed.
+
+Duration:
+38 minutes
+
+------------------------------------------------
+
+Incident ID: SS-103
+
+Date:
+09 February 2026
+
+Severity:
+High
+
+Affected Component:
+Auth0
+
+Impact:
+User login unavailable.
+
+Duration:
+31 minutes
+
+------------------------------------------------
+
+Incident ID: SS-104
+
+Date:
+28 February 2026
+
+Severity:
+Medium
+
+Affected Component:
+Mux Video
+
+Impact:
+Video buffering for premium users.
+
+Duration:
+22 minutes
+
+------------------------------------------------
+
+Incident ID: SS-105
+
+Date:
+15 March 2026
+
+Severity:
+Medium
+
+Affected Component:
+OneSignal
+
+Impact:
+Push notifications delayed.
+
+Duration:
+16 minutes
+
+------------------------------------------------
+
+Incident ID: SS-106
+
+Date:
+02 April 2026
+
+Severity:
+Low
+
+Affected Component:
+SendGrid
+
+Impact:
+Email verification delayed.
+
+Duration:
+9 minutes
+
+------------------------------------------------
+
+Incident ID: SS-107
+
+Date:
+18 April 2026
+
+Severity:
+Medium
+
+Affected Component:
+Chargebee
+
+Impact:
+Invoice generation delayed.
+
+Duration:
+21 minutes

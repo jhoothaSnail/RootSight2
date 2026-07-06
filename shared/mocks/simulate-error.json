@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "SCENARIO_NOT_FOUND",
+    "message": "The requested simulation scenario is not recognized. Valid scenarios are: OAuth Failure, Database Failure, Payment Gateway Failure, Twilio Failure."
+  }
+}

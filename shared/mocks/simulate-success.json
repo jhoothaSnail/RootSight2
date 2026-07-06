@@ -1,0 +1,55 @@
+{
+  "scenario": "OAuth Failure",
+  "incidentId": "INC-58",
+  "events": [
+    {
+      "id": "evt1",
+      "type": "alert",
+      "message": "Google OAuth token endpoint returning 504 Gateway Timeout",
+      "timestamp": "2026-06-24T12:00:02Z",
+      "source": "Auth Service"
+    },
+    {
+      "id": "evt2",
+      "type": "log",
+      "message": "Login timeout detected - token validation failed for 1,284 sessions",
+      "timestamp": "2026-06-24T12:00:14Z",
+      "source": "Login Service"
+    },
+    {
+      "id": "evt3",
+      "type": "log",
+      "message": "Registration flow aborted: upstream auth dependency unavailable",
+      "timestamp": "2026-06-24T12:00:31Z",
+      "source": "Registration Service"
+    },
+    {
+      "id": "evt4",
+      "type": "ticket",
+      "message": "Multiple users report 'Cannot login: Invalid token response'",
+      "timestamp": "2026-06-24T12:01:05Z",
+      "source": "Support Desk"
+    },
+    {
+      "id": "evt5",
+      "type": "log",
+      "message": "Password reset emails delayed - auth handshake exceeded 5000ms",
+      "timestamp": "2026-06-24T12:01:40Z",
+      "source": "Password Reset Service"
+    },
+    {
+      "id": "evt6",
+      "type": "complaint",
+      "message": "Customer @meridian_ops: 'OAuth login broken for our whole team'",
+      "timestamp": "2026-06-24T12:02:12Z",
+      "source": "Twitter"
+    },
+    {
+      "id": "evt7",
+      "type": "alert",
+      "message": "Error rate on Auth Service exceeded 35% over 5 minute window",
+      "timestamp": "2026-06-24T12:02:48Z",
+      "source": "API Gateway"
+    }
+  ]
+}

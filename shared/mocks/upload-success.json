@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "summary": {
+    "services": 12,
+    "vendors": 4,
+    "teams": 3,
+    "engineers": 5,
+    "databases": 2,
+    "incidents": 4,
+    "runbooks": 3,
+    "relationships": 25
+  }
+}

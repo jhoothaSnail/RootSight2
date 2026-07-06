@@ -1,0 +1,12 @@
+Service,Owner Team,Criticality,Dependencies
+Web Frontend,Frontend Team,High,None
+Mobile API,Platform Team,Critical,Web Frontend
+Identity Service,Security Team,Critical,Mobile API|Auth0
+Profile Service,User Platform Team,High,Identity Service|Cassandra Cluster|Redis Cluster
+Content Service,Content Team,Critical,Streaming Gateway|Search Service
+Streaming Gateway,Streaming Team,Critical,Mux Video
+Search Service,Search Team,Medium,OpenSearch Cluster
+Subscription Service,Commerce Team,Critical,Billing Service
+Billing Service,Commerce Team,Critical,Chargebee
+Notification Service,Platform Team,Medium,SendGrid|OneSignal
+Analytics Pipeline,Data Team,Medium,Kafka Cluster|ClickHouse Analytics DB

@@ -1,0 +1,43 @@
+{
+  "incidents": [
+    {
+      "incidentId": "INC-104",
+      "timestamp": "2026-07-06T11:58:02Z",
+      "scenario": "Google OAuth Failure",
+      "rootCause": "Google OAuth",
+      "rootCauseType": "Vendor",
+      "confidence": 92,
+      "confidenceLabel": "High",
+      "affectedServices": ["Login Service", "Registration Service", "Auth Service"],
+      "affectedTeams": ["Platform Team", "Team Alpha"],
+      "explanation": "Google OAuth outage caused authentication failures across dependent services.",
+      "resolvedBy": null
+    },
+    {
+      "incidentId": "INC-103",
+      "timestamp": "2026-07-04T09:14:30Z",
+      "scenario": "Database Failure",
+      "rootCause": "PostgreSQL Primary",
+      "rootCauseType": "Database",
+      "confidence": 88,
+      "confidenceLabel": "High",
+      "affectedServices": ["Auth Service", "Registration Service", "Payment Service"],
+      "affectedTeams": ["Platform Team"],
+      "explanation": "PostgreSQL Primary connection pool exhaustion caused cascading read failures.",
+      "resolvedBy": "Rahul"
+    },
+    {
+      "incidentId": "INC-42",
+      "timestamp": "2025-01-12T14:22:10Z",
+      "scenario": "Google OAuth Failure",
+      "rootCause": "Google OAuth",
+      "rootCauseType": "Vendor",
+      "confidence": 89,
+      "confidenceLabel": "High",
+      "affectedServices": ["Login Service", "Registration Service"],
+      "affectedTeams": ["Team Alpha"],
+      "explanation": "OAuth credential latency caused login failures across Team Alpha services.",
+      "resolvedBy": "Rahul"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "rootCause": "Google OAuth",
+  "rootCauseType": "Vendor",
+  "confidence": 92,
+  "confidenceLabel": "High",
+  "affectedServices": [
+    "Login Service",
+    "Registration Service",
+    "Password Reset Service",
+    "Team Creation Service"
+  ],
+  "affectedVendors": [
+    "Google OAuth"
+  ],
+  "affectedTeams": [
+    "Team Alpha"
+  ],
+  "impactRadius": {
+    "services": 4,
+    "teams": 1,
+    "vendors": 1,
+    "estimatedUsers": 12400
+  },
+  "explanation": "Google OAuth outage caused authentication failures across dependent services. The token endpoint returned sustained 504 Gateway Timeouts, breaking token validation for Auth Service and cascading to Login Service and Registration Service. Because four Tier-1 services depend on this single vendor without a localized fallback, the failure propagated organization-wide within three minutes.",
+  "evidence": [
+    "Auth Service token validation error rate spiked to 35% during the OAuth degradation window.",
+    "Login Service and Registration Service both trace upstream to Google OAuth via Auth Service.",
+    "Historical incident INC-42 exhibited the same OAuth credential latency signature."
+  ],
+  "historicalMatch": {
+    "incidentId": "INC-42",
+    "date": "2025-01-12",
+    "summary": "OAuth credential latency caused login failures across Team Alpha services.",
+    "resolver": "Rahul",
+    "team": "Team Alpha"
+  },
+  "suggestedRunbook": "RB-001"
+}

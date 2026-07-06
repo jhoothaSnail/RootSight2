@@ -1,0 +1,278 @@
+# Meridian Financial Services — Vendor Integration Documentation
+**Maintained by:** Platform Engineering  
+**Last Updated:** 2024-10-30  
+**Classification:** Internal
+
+---
+
+## 1. Stripe — International Payment Gateway
+
+**Vendor:** Stripe, Inc.  
+**Category:** Payment Gateway  
+**Contract Owner:** Siddharth Nair  
+**Account Manager:** stripe-support@meridianpay.io  
+**Status:** Active — Primary PSP for international payments (non-INR)  
+**API Version:** 2024-09-01  
+**Integration Services:** payment-service, reconciliation-service  
+
+### Integration Details
+- **Auth:** Secret key + webhook signature verification
+- **Endpoints used:** `/v1/payment_intents`, `/v1/refunds`, `/v1/payouts`, `/v1/balance_transactions`
+- **Webhook events:** `payment_intent.succeeded`, `payment_intent.payment_failed`, `charge.refunded`
+- **Settlement:** T+2 business days to Meridian's Stripe balance, then SWIFT to HDFC account
+- **Rate limits:** 100 req/s per key (we operate at ~35 req/s peak)
+
+### Known Issues / Limitations
+- Stripe webhooks are sometimes delivered out of order — payment-service handles idempotency via Stripe's idempotency keys
+- Settlement reports are only available via API (no SFTP); reconciliation-service polls nightly
+- Stripe does not support INR for card payments in India (regulatory) — use Razorpay for all INR transactions
+
+### Incident History
+- **INC-2024-104:** Stripe API version 2022-08-01 deprecated — affected reconciliation-service (2024-10-02)
+
+### Status Page
+https://status.stripe.com
+
+---
+
+## 2. Razorpay — India Payment Gateway
+
+**Vendor:** Razorpay Software Private Limited  
+**Category:** Payment Gateway  
+**Contract Owner:** Siddharth Nair  
+**Support:** support@razorpay.com | Priority Support SLA: 2-hour response  
+**Status:** Active — Primary PSP for INR payments  
+**API Version:** v1  
+**Integration Services:** payment-service, payout-service, reconciliation-service  
+
+### Integration Details
+- **Auth:** Key ID + Key Secret (basic auth)
+- **Endpoints used:** `/v1/payments`, `/v1/payouts`, `/v1/settlements`, `/v1/refunds`
+- **Webhook events:** `payment.captured`, `payment.failed`, `payout.processed`, `payout.failed`
+- **Settlement:** T+1 business days for UPI/IMPS, T+3 for cards
+- **Rate limits:** 200 req/s (enterprise contract)
+
+### Failover Configuration
+If Razorpay is degraded, payment-service can route INR card payments to Stripe (India routing). UPI payments have no failover — they will queue.
+
+Feature flag to switch PSP:
+```
+config-service key: payment.primary_psp
+value: "razorpay" (default) | "stripe"
+```
+
+### Known Issues / Limitations
+- Razorpay settlement reports are delayed by up to 48 hours during public holidays
+- Payout API has a daily limit of ₹500 crore without pre-approval
+- Webhooks are not guaranteed to arrive within 30 minutes during peak (GST filing days)
+
+### Incident History
+- **INC-2024-047:** Razorpay webhook timeout cascade — payment-service connection pool exhaustion (2024-07-03)
+
+### Status Page
+https://status.razorpay.com
+
+---
+
+## 3. Twilio — SMS and Voice
+
+**Vendor:** Twilio Inc.  
+**Category:** Communications Platform  
+**Contract Owner:** Ananya Singh  
+**Support:** support@twilio.com | Priority Support SLA: 4-hour response  
+**Status:** Active  
+**Integration Services:** auth-service (OTP), notification-service (transactional SMS)  
+
+### Integration Details
+- **Auth:** Account SID + Auth Token (HTTP Basic)
+- **Services used:** Twilio Programmable SMS, Twilio Verify (OTP)
+- **Twilio Verify:** Used by auth-service for login OTP. Handles delivery, retry, and expiry internally.
+- **Programmable SMS:** Used by notification-service for transactional alerts.
+- **Phone numbers:** Dedicated sender pool (12 numbers) for India. Shared pool for international.
+- **Daily SMS volume:** ~120,000 (peak on payment days: ~220,000)
+
+### Rate Limits
+- Twilio Verify: 5 OTP attempts per phone number per 10 minutes
+- Programmable SMS: 1 msg/sec per sender number (we have 12 numbers = 12 msg/sec effective)
+- At peak volume, notification-service queues via kafka-notifications and delivers within SLO
+
+### Delivery SLO
+- OTP SMS: 95th percentile < 8 seconds delivery
+- Transactional SMS: 95th percentile < 30 seconds
+
+### Known Issues / Limitations
+- DND (Do Not Disturb) registry in India blocks transactional SMS to non-TRAI-registered recipients
+- Twilio Verify does not provide delivery receipts for OTPs — only "delivered to carrier"
+- Some Jio network subscribers see delays > 2 minutes (carrier routing issue, ongoing since 2024-06)
+
+### Incident History
+- **INC-2024-118:** Twilio response objects caused notification-service memory leak (2024-10-19)
+
+### Status Page
+https://status.twilio.com
+
+---
+
+## 4. Google OAuth — Identity Provider
+
+**Vendor:** Google LLC  
+**Category:** Identity and Authentication  
+**Contract Owner:** Priya Sharma  
+**Status:** Active — Default OAuth provider for merchant portal login  
+**Integration Services:** auth-service  
+
+### Integration Details
+- **Protocol:** OAuth 2.0 Authorization Code Flow with PKCE
+- **Scopes requested:** `openid`, `email`, `profile`
+- **Client type:** Confidential client (server-side)
+- **Token endpoint:** `https://oauth2.googleapis.com/token`
+- **JWKS endpoint:** `https://www.googleapis.com/oauth2/v3/certs`
+- **ID token validation:** auth-service validates signature, `aud`, `exp`, `iss` on every token
+
+### Fallback
+If Google OAuth is unavailable, TOTP (Time-based One-Time Password) login can be activated:
+```
+config-service key: auth.disable_oauth
+value: "false" (default) | "true" (activates TOTP fallback)
+```
+**Note:** Only ~68% of merchants have TOTP enrolled. TOTP fallback will result in 32% of merchants being unable to log in until Google OAuth recovers.
+
+### Incident History
+- **INC-2024-089:** Google OAuth 34-minute global outage — merchant login unavailable (2024-09-14)
+
+### Status Page
+https://workspace.google.com/status
+
+---
+
+## 5. SendGrid — Email Delivery
+
+**Vendor:** Twilio SendGrid (division of Twilio Inc.)  
+**Category:** Transactional Email  
+**Contract Owner:** Ananya Singh  
+**Status:** Active  
+**Integration Services:** notification-service, reconciliation-service, reporting-service  
+
+### Integration Details
+- **Auth:** API key (v3 API)
+- **Sending domain:** `notifications@meridianpay.io` (DKIM + SPF configured)
+- **Daily email volume:** ~85,000 (peaks on reconciliation report days: ~200,000)
+- **Email types:** Payment receipts, loan statements, settlement reports, incident alerts (to finance team), OTP fallback
+
+### Template IDs
+| Template | SendGrid Template ID | Owned By |
+|---|---|---|
+| Payment Receipt | d-a1b2c3d4e5f6 | Team Payments |
+| Loan Disbursement Notice | d-b2c3d4e5f6a1 | Team Lending |
+| Monthly Statement | d-c3d4e5f6a1b2 | Team Data |
+| Settlement Report | d-d4e5f6a1b2c3 | Team Payments |
+| OTP Fallback | d-e5f6a1b2c3d4 | Team Identity |
+
+### SLO
+- Delivery rate > 99.2%
+- Inbox placement rate > 95%
+- Bounce rate < 0.5%
+
+---
+
+## 6. AWS SageMaker — ML Model Hosting
+
+**Vendor:** Amazon Web Services  
+**Category:** Machine Learning Platform  
+**Contract Owner:** Meera Iyer  
+**Status:** Active  
+**Integration Services:** fraud-detection-service (inference), underwriting-service (inference), ml-pipeline-service (training)  
+
+### Models in Production
+
+| Model | Endpoint Name | Instance Type | Retraining Schedule |
+|---|---|---|---|
+| Fraud Detection v4.2 | fraud-detection-prod | ml.g4dn.xlarge | Weekly (Sunday 02:00 IST) |
+| Credit Scoring v2.8 | credit-scoring-prod | ml.m5.2xlarge | Bi-weekly (1st and 15th) |
+
+### Integration Pattern
+- **fraud-detection-service:** Calls SageMaker real-time endpoint inline on every payment. p99 must be < 60ms. Endpoint has auto-scaling (2–8 instances, scale-out at 70% CPU).
+- **underwriting-service:** Calls SageMaker endpoint on loan applications. p99 < 2000ms acceptable.
+- **ml-pipeline-service:** Triggers SageMaker Training Jobs via Airflow DAG. Training data sourced from redshift-warehouse.
+
+### Incident History
+- **INC-2024-063:** Stale fraud model caused false positive surge — ml-pipeline-service DAG missed runs (2024-08-09)
+
+---
+
+## 7. HyperVerge — KYC & Identity Verification
+
+**Vendor:** HyperVerge Inc.  
+**Category:** KYC / Identity Verification  
+**Contract Owner:** Rohan Verma  
+**Status:** Active  
+**Integration Services:** kyc-service  
+
+### Integration Details
+- **Services used:** HyperVerge OneDoc (document verification), HyperVerge FaceMatch
+- **Auth:** API key (header: `appId` + `appKey`)
+- **Documents supported:** Aadhaar, PAN Card, Passport, Driver's License, Voter ID
+- **Response time:** 95th percentile < 4 seconds for document verification
+- **Accuracy:** 98.7% document classification accuracy (vendor-stated)
+
+### Data Handling
+- Document images are sent to HyperVerge for processing. DPA (Data Processing Agreement) signed.
+- HyperVerge retains processed images for 30 days per their privacy policy.
+- All document images are also stored in Meridian's s3-documents bucket before sending.
+
+---
+
+## 8. Open Exchange Rates — FX Data
+
+**Vendor:** Open Exchange Rates Ltd.  
+**Category:** Foreign Exchange Data  
+**Contract Owner:** Aditya Kumar  
+**Status:** Active  
+**Integration Services:** fx-service  
+
+### Integration Details
+- **Plan:** Startup (10,000 API requests/month)
+- **Auth:** `app_id` query parameter
+- **Endpoint:** `https://openexchangerates.org/api/latest.json`
+- **Update frequency:** Hourly (vendor side). fx-service polls every 45 seconds and caches in redis-fx.
+- **Currencies supported:** 170+ currencies. Meridian actively uses: USD, EUR, GBP, AED, SGD, MYR, INR, IDR.
+
+### Fallback
+If OER is unavailable, fx-service falls back to last-known rates stored in redis-fx (up to 1 hour stale). Feature flag: `fx.allow_stale_rates`. Finance team must be notified if stale rates are in use.
+
+---
+
+## 9. CIBIL — Credit Bureau (India)
+
+**Vendor:** TransUnion CIBIL Limited  
+**Category:** Credit Bureau  
+**Contract Owner:** Meera Iyer  
+**Status:** Active  
+**Integration Services:** underwriting-service  
+
+### Integration Details
+- **API:** CIBIL Commercial API v2.1
+- **Auth:** Client certificate (mTLS) + API key
+- **Rate limit:** 500 requests/hour (enterprise contract)
+- **Response time:** p95 < 8 seconds
+- **Data returned:** CIBIL score (300–900), active credit lines, delinquency history, enquiry count
+
+### Compliance
+All CIBIL API calls must be logged to audit-service per RBI guidelines. User consent must be obtained and stored before making bureau queries.
+
+---
+
+## 10. Experian — Credit Bureau (International)
+
+**Vendor:** Experian PLC  
+**Category:** Credit Bureau  
+**Contract Owner:** Meera Iyer  
+**Status:** Active  
+**Integration Services:** underwriting-service  
+
+### Integration Details
+- **API:** Experian CrossCore API
+- **Auth:** OAuth 2.0 client credentials
+- **Used for:** Non-India borrowers (UAE, Singapore, Malaysia)
+- **Rate limit:** 200 requests/hour
+- **Response time:** p95 < 6 seconds
