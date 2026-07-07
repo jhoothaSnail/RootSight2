@@ -17,10 +17,37 @@ interface LaidOutNode {
 }
 
 const VIEW_W = 1000;
+const PER_ROW = 6;
+const ROW_GAP = 120;
+const BLOCK_GAP = 30;
 
-// Layered topology: teams on top, services in the middle (wrapped into rows),
-// vendors + databases anchored at the bottom. Deterministic so the graph stays
-// stable across renders.
+const spread = (count: number, idx: number) => ((idx + 1) * VIEW_W) / (count + 1);
+
+// Places `items` into wrapped rows of PER_ROW starting at `startY`, mutating
+// `positions` in place. Returns the y-coordinate of the last row so callers
+// can stack the next group beneath it, or `null` if there was nothing to
+// place (so an empty group doesn't reserve blank vertical space).
+function placeRows(
+  items: GraphResponse['nodes'],
+  startY: number,
+  positions: Map<string, { x: number; y: number }>
+): number | null {
+  if (items.length === 0) return null;
+  items.forEach((n, i) => {
+    const row = Math.floor(i / PER_ROW);
+    const rowItems = Math.min(PER_ROW, items.length - row * PER_ROW);
+    const idxInRow = i % PER_ROW;
+    positions.set(n.id, { x: spread(rowItems, idxInRow), y: startY + row * ROW_GAP });
+  });
+  const rows = Math.ceil(items.length / PER_ROW);
+  return startY + (rows - 1) * ROW_GAP;
+}
+
+// Layered topology: teams on top, services in the middle, vendors + databases
+// anchored at the bottom, any other node types last. Every group wraps into
+// rows of PER_ROW so it stays readable regardless of how many teams/vendors/
+// databases a real org has (not just Services). Deterministic so the graph
+// stays stable across renders.
 function layoutGraph(graph: GraphResponse): { nodes: LaidOutNode[]; height: number } {
   const teams = graph.nodes.filter((n) => n.type === 'Team');
   const services = graph.nodes.filter((n) => n.type === 'Service');
@@ -30,35 +57,29 @@ function layoutGraph(graph: GraphResponse): { nodes: LaidOutNode[]; height: numb
   );
 
   const positions = new Map<string, { x: number; y: number }>();
-  const spread = (count: number, idx: number) => ((idx + 1) * VIEW_W) / (count + 1);
+  let cursorY = 70;
 
-  const topY = 70;
-  teams.forEach((n, i) => positions.set(n.id, { x: spread(teams.length, i), y: topY }));
+  const lastTeamY = placeRows(teams, cursorY, positions);
+  if (lastTeamY !== null) cursorY = lastTeamY + ROW_GAP + BLOCK_GAP;
 
-  const perRow = 6;
-  const serviceRows = Math.max(1, Math.ceil(services.length / perRow));
-  const serviceStartY = 200;
-  const rowGap = 120;
-  services.forEach((n, i) => {
-    const row = Math.floor(i / perRow);
-    const rowItems = Math.min(perRow, services.length - row * perRow);
-    const idxInRow = i % perRow;
-    positions.set(n.id, { x: spread(rowItems, idxInRow), y: serviceStartY + row * rowGap });
-  });
+  const lastServiceY = placeRows(services, cursorY, positions);
+  if (lastServiceY !== null) cursorY = lastServiceY + ROW_GAP + BLOCK_GAP;
 
-  const sinkY = serviceStartY + serviceRows * rowGap + 30;
-  sinks.forEach((n, i) => positions.set(n.id, { x: spread(sinks.length, i), y: sinkY }));
-  others.forEach((n, i) => positions.set(n.id, { x: spread(others.length, i), y: topY }));
+  const lastSinkY = placeRows(sinks, cursorY, positions);
+  if (lastSinkY !== null) cursorY = lastSinkY + ROW_GAP + BLOCK_GAP;
+
+  const lastOtherY = placeRows(others, cursorY, positions);
+  const bottomY = lastOtherY ?? lastSinkY ?? lastServiceY ?? lastTeamY ?? cursorY;
 
   const nodes: LaidOutNode[] = graph.nodes.map((n) => ({
     id: n.id,
     name: n.name,
     type: n.type,
     status: n.status,
-    ...(positions.get(n.id) || { x: VIEW_W / 2, y: topY }),
+    ...(positions.get(n.id) || { x: VIEW_W / 2, y: 70 }),
   }));
 
-  return { nodes, height: sinkY + 70 };
+  return { nodes, height: bottomY + 70 };
 }
 
 const EVENT_ACCENT: Record<string, string> = {
@@ -321,6 +342,16 @@ export default function Dashboard() {
             <h2 className="font-mono text-sm md:text-base uppercase tracking-widest font-semibold text-zinc-300 flex items-center gap-2">
               <Network className="w-4 h-4 md:w-5 md:h-5 text-cyan-500" /> Topographic Network
             </h2>
+            {analysisComplete && (
+              <div className="hidden sm:flex items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-amber-500" /> Root Cause
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-red-500" /> Affected
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex-1 relative bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/50 via-zinc-950 to-zinc-950">
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:2rem_2rem] border-zinc-800"></div>
@@ -387,7 +418,20 @@ export default function Dashboard() {
                         transform="rotate(45)"
                       />
                       {isRoot && (
-                        <circle r="34" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="2 4" className="animate-[spin_6s_linear_infinite] opacity-40" />
+                        <>
+                          <circle r="34" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="2 4" className="animate-[spin_6s_linear_infinite] opacity-40" />
+                          <g transform="translate(0, -30)">
+                            <rect x="-40" y="-10" width="80" height="18" rx="2" fill="#f59e0b" />
+                            <text
+                              y="1" fontSize="9" fontWeight="700"
+                              textAnchor="middle" dominantBaseline="middle"
+                              fill="#09090b"
+                              className="font-mono tracking-widest uppercase"
+                            >
+                              Root Cause
+                            </text>
+                          </g>
+                        </>
                       )}
                       <text
                         y="26" fontSize="13"

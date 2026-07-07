@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Activity, Code2, Network, TerminalSquare, Database, ShieldAlert, Server } from 'lucide-react';
 import { Logo } from './Logo';
 import IntelligenceWorkspace from './IntelligenceWorkspace';
+import type { ViewState } from '../types';
 
 interface HomeProps {
-  onNavigate: (view: 'dashboard') => void;
+  onNavigate: (view: ViewState) => void;
 }
 
 export default function Home({ onNavigate }: HomeProps) {
@@ -72,9 +73,17 @@ export default function Home({ onNavigate }: HomeProps) {
           <span className="font-display font-semibold text-xl tracking-wide text-zinc-100 uppercase">RootSight</span>
         </div>
         
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 border border-zinc-800 bg-zinc-900/50 rounded text-zinc-400 text-xs font-mono tracking-widest uppercase backdrop-blur-sm">
-          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
-          Platform Status: Nominal
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 border border-zinc-800 bg-zinc-900/50 rounded text-zinc-400 text-xs font-mono tracking-widest uppercase backdrop-blur-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
+            Platform Status: Nominal
+          </div>
+          <button
+            onClick={() => onNavigate('login')}
+            className="px-4 py-2 rounded border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-xs font-mono font-semibold uppercase tracking-widest transition-all backdrop-blur-sm"
+          >
+            Login
+          </button>
         </div>
       </header>
 

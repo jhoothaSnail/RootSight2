@@ -7,15 +7,24 @@ import OrgIntelligence from './components/OrgIntelligence';
 import Architecture from './components/Architecture';
 import Runbooks from './components/Runbooks';
 import IncidentHistory from './components/IncidentHistory';
+import Login from './components/Login';
 import { Logo } from './components/Logo';
+import { useAuth } from './context/AuthContext';
 import type { ViewState } from './types';
+
+const PROTECTED_VIEWS: ViewState[] = ['dashboard', 'architecture', 'runbooks', 'org', 'incidents'];
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('home');
   const [navCollapsed, setNavCollapsed] = useState(false);
+  const { isAuthenticated } = useAuth();
+
+  // Guard protected areas: any workspace view requires an authenticated session.
+  const isProtected = PROTECTED_VIEWS.includes(currentView);
+  const effectiveView: ViewState = isProtected && !isAuthenticated ? 'login' : currentView;
 
   const renderView = () => {
-    switch (currentView) {
+    switch (effectiveView) {
       case 'home':
         return <Home onNavigate={setCurrentView} />;
       case 'dashboard':
@@ -28,6 +37,8 @@ export default function App() {
         return <OrgIntelligence />;
       case 'incidents':
         return <IncidentHistory />;
+      case 'login':
+        return <Login onNavigate={setCurrentView} />;
       default:
         return <Home onNavigate={setCurrentView} />;
     }
@@ -45,7 +56,7 @@ export default function App() {
     <div className="absolute inset-0 overflow-hidden bg-zinc-950 text-zinc-50 flex selection:bg-amber-500/30">
       
       {/* Sidebar Navigation */}
-      {currentView !== 'home' && (
+      {effectiveView !== 'home' && effectiveView !== 'login' && (
         <>
           {/* Mobile Overlay */}
           {!navCollapsed && (
@@ -77,14 +88,14 @@ export default function App() {
                <NavItem 
                  icon={<LayoutDashboard />} 
                  label="Analysis Engine" 
-                 active={currentView === 'dashboard'} 
+                 active={effectiveView === 'dashboard'} 
                  onClick={() => handleNavClick('dashboard')} 
                  collapsed={navCollapsed && window.innerWidth >= 768}
                />
                <NavItem 
                  icon={<Server />} 
                  label="Architecture Map" 
-                 active={currentView === 'architecture'} 
+                 active={effectiveView === 'architecture'} 
                  onClick={() => handleNavClick('architecture')} 
                  collapsed={navCollapsed && window.innerWidth >= 768}
                />
@@ -95,21 +106,21 @@ export default function App() {
                <NavItem 
                  icon={<BookOpen />} 
                  label="AI Runbooks" 
-                 active={currentView === 'runbooks'} 
+                 active={effectiveView === 'runbooks'} 
                  onClick={() => handleNavClick('runbooks')} 
                  collapsed={navCollapsed && window.innerWidth >= 768}
                />
                <NavItem 
                  icon={<Building2 />} 
                  label="Org Intelligence" 
-                 active={currentView === 'org'} 
+                 active={effectiveView === 'org'} 
                  onClick={() => handleNavClick('org')} 
                  collapsed={navCollapsed && window.innerWidth >= 768}
                />
                <NavItem
                  icon={<History />}
                  label="Incident History"
-                 active={currentView === 'incidents'}
+                 active={effectiveView === 'incidents'}
                  onClick={() => handleNavClick('incidents')}
                  collapsed={navCollapsed && window.innerWidth >= 768}
                />
@@ -136,7 +147,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 relative h-full flex flex-col overflow-hidden w-full">
         {/* Mobile Header Toggle */}
-        {currentView !== 'home' && (
+        {effectiveView !== 'home' && effectiveView !== 'login' && (
           <div className="md:hidden flex items-center justify-between p-4 border-b border-zinc-900 bg-zinc-950 shrink-0">
              <div className="flex items-center gap-2">
                <Logo className="w-6 h-6 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
@@ -151,7 +162,7 @@ export default function App() {
         <div className="flex-1 relative overflow-hidden">
           <AnimatePresence mode="wait">
             <motion.div
-              key={currentView}
+              key={effectiveView}
               initial={{ opacity: 0, scale: 0.98, filter: 'blur(4px)' }}
               animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, scale: 1.02, filter: 'blur(4px)' }}

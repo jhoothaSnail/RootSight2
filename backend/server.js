@@ -1786,8 +1786,21 @@ app.get("/api/graph", async (_req, res) => {
     // Return live data even if empty — let the frontend show the EmptyState.
     // Only fall back to mock on a genuine Neo4j connectivity failure.
     deriveStatus(graph.nodes, graph.relationships);
-    console.log(`[Graph] ✓ ${graph.nodes.length} nodes, ${graph.relationships.length} relationships`);
-    return res.json(graph);
+
+    // Engineer/Incident/Runbook are operational/meta nodes (used by org
+    // intelligence, incident correlation, etc. elsewhere) — they don't belong
+    // in the architecture topology view, so scope this endpoint's response to
+    // real architecture entities only. fetchGraphFromNeo4j() itself is left
+    // untouched since other endpoints still need the full graph.
+    const META_TYPES = new Set(["Engineer", "Incident", "Runbook"]);
+    const topologyNodes = graph.nodes.filter((n) => !META_TYPES.has(n.type));
+    const topologyIds = new Set(topologyNodes.map((n) => n.id));
+    const topologyRelationships = graph.relationships.filter(
+      (r) => topologyIds.has(r.source) && topologyIds.has(r.target)
+    );
+
+    console.log(`[Graph] ✓ ${topologyNodes.length} nodes, ${topologyRelationships.length} relationships`);
+    return res.json({ nodes: topologyNodes, relationships: topologyRelationships });
   } catch (err) {
     // Only reach here on a Neo4j driver / network failure, not an empty graph.
     console.warn("[Graph] ⚠ Neo4j unreachable, falling back to mock:", err.message);
