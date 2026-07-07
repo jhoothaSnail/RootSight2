@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import { useEffect, useMemo, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldAlert, Brain, Activity, Zap, Network, User, Cpu, FileWarning, Fingerprint, RotateCcw, Loader2, AlertTriangle } from 'lucide-react';
 import type { GraphResponse, ScenarioName } from '../types';
-import { getGraph, simulate, analyze, ApiClientError } from '../api/client';
-import { SCENARIO_NAMES } from '../data/scenarios';
+import { getGraph, getScenarios, simulate, analyze, ApiClientError } from '../api/client';
 import { useAnalysis } from '../context/AnalysisContext';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,9 +94,62 @@ export default function Dashboard() {
   }, [setGraph, setGraphLoading, setGraphError]);
 
   useEffect(() => {
-    // Only fetch once; persisted graph survives section switches via context.
-    if (!graph && !graphLoading) loadGraph();
-  }, [graph, graphLoading, loadGraph]);
+    // Always re-fetch on mount. The Dashboard fully unmounts whenever the
+    // user navigates to a different section (App.tsx keys each view by
+    // `currentView` inside AnimatePresence) and is freshly mounted again
+    // every time the user returns — including immediately after a brand new
+    // document upload. Fetching unconditionally here (instead of the old
+    // "only if I don't already have a graph" guard) guarantees the topology
+    // shown is always the CURRENT uploaded company's graph, never a stale
+    // one left over in AnalysisContext from a previous upload.
+    loadGraph();
+
+    // Clear any previous run's analysis/events too. They reference node
+    // names from whichever graph was active when they were produced — if
+    // that was a different uploaded company, leaving them in place would
+    // show a new graph next to an old root-cause explanation that no
+    // longer corresponds to it.
+    setEvents([]);
+    setAnalysis(null);
+    setPhase('idle');
+    setRunError(null);
+    // Intentionally runs once per Dashboard mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Scenario list — kept local (not in AnalysisContext) so it re-fetches from
+  // scratch every time the Dashboard mounts (i.e. every time the user
+  // navigates here, including right after a fresh upload), instead of
+  // persisting stale scenarios from a previously uploaded company.
+  const [scenarios, setScenarios] = useState<string[]>([]);
+  const [scenariosLoading, setScenariosLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setScenariosLoading(true);
+    getScenarios()
+      .then(({ scenarios: names }) => {
+        if (cancelled) return;
+        setScenarios(names);
+        // If the currently selected scenario doesn't exist for this upload
+        // (e.g. it's left over from a previously uploaded company), fall
+        // back to the first scenario this graph actually supports.
+        if (names.length > 0 && !names.includes(scenario)) {
+          setScenario(names[0]);
+        }
+      })
+      .catch(() => {
+        // Leave whatever scenario list/selection was already there.
+      })
+      .finally(() => {
+        if (!cancelled) setScenariosLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally runs once per Dashboard mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { nodes: laidOut, height: viewH } = useMemo(
     () => (graph ? layoutGraph(graph) : { nodes: [], height: 600 }),
@@ -197,10 +249,13 @@ export default function Dashboard() {
               <select
                 value={scenario}
                 onChange={(e) => setScenario(e.target.value as ScenarioName)}
-                disabled={busy}
+                disabled={busy || scenariosLoading || scenarios.length === 0}
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-2 text-xs md:text-sm text-zinc-200 font-mono focus:outline-none focus:border-amber-500/50 disabled:opacity-50"
               >
-                {SCENARIO_NAMES.map((s) => (
+                {scenarios.length === 0 && (
+                  <option value={scenario}>{scenariosLoading ? 'Loading scenarios...' : scenario}</option>
+                )}
+                {scenarios.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
