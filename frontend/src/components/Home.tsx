@@ -3,16 +3,24 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Activity, Code2, Network, TerminalSquare, Database, ShieldAlert, Server } from 'lucide-react';
 import { Logo } from './Logo';
 import IntelligenceWorkspace from './IntelligenceWorkspace';
+import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
 
 interface HomeProps {
   onNavigate: (view: ViewState) => void;
 }
 
+// sessionStorage flag so a user who was bounced to Login mid-"Initialize Analysis"
+// lands straight in the Upload Section once they authenticate, instead of the
+// bare landing page. Cleared as soon as it's consumed.
+const PENDING_INTENT_KEY = 'rootsight_pending_initialize';
+
 export default function Home({ onNavigate }: HomeProps) {
+  const { isAuthenticated, isDemo, logout } = useAuth();
   const [isWorkspaceActive, setIsWorkspaceActive] = useState(false);
   const [confidence, setConfidence] = useState(91);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     const analysisTimer = setTimeout(() => {
@@ -20,6 +28,15 @@ export default function Home({ onNavigate }: HomeProps) {
     }, 2000);
     return () => clearTimeout(analysisTimer);
   }, []);
+
+  // Resume the upload flow automatically after a login that was triggered by
+  // clicking "Initialize Analysis" while unauthenticated.
+  useEffect(() => {
+    if (isAuthenticated && sessionStorage.getItem(PENDING_INTENT_KEY)) {
+      sessionStorage.removeItem(PENDING_INTENT_KEY);
+      setIsWorkspaceActive(true);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -35,6 +52,11 @@ export default function Home({ onNavigate }: HomeProps) {
   }, []);
 
   const handleInitialize = () => {
+    if (!isAuthenticated) {
+      sessionStorage.setItem(PENDING_INTENT_KEY, '1');
+      onNavigate('login');
+      return;
+    }
     setIsWorkspaceActive(true);
   };
 
@@ -78,12 +100,54 @@ export default function Home({ onNavigate }: HomeProps) {
             <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
             Platform Status: Nominal
           </div>
-          <button
-            onClick={() => onNavigate('login')}
-            className="px-4 py-2 rounded border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-xs font-mono font-semibold uppercase tracking-widest transition-all backdrop-blur-sm"
-          >
-            Login
-          </button>
+          {isAuthenticated ? (
+            <div className="relative">
+              <button
+                onClick={() => setProfileMenuOpen((v) => !v)}
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-zinc-950 font-bold text-sm uppercase tracking-wider ring-1 ring-zinc-800 hover:ring-amber-500/60 transition-all"
+                aria-label="Account menu"
+              >
+                {isDemo ? 'D' : 'U'}
+              </button>
+              {profileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl shadow-black/40 py-2 z-50">
+                  <div className="px-4 py-2 border-b border-zinc-800">
+                    <p className="text-xs text-zinc-500 font-mono uppercase tracking-widest">Signed in</p>
+                    <p className="text-sm text-zinc-200 font-medium truncate">
+                      {isDemo ? 'Demo Workspace' : 'Your Workspace'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      onNavigate('dashboard');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                  >
+                    Go to Workspace
+                  </button>
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      setIsWorkspaceActive(false);
+                      logout().catch(() => {});
+                      onNavigate('home');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => onNavigate('login')}
+              className="px-4 py-2 rounded border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-xs font-mono font-semibold uppercase tracking-widest transition-all backdrop-blur-sm"
+            >
+              Login
+            </button>
+          )}
         </div>
       </header>
 

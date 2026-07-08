@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useCallback, useState } from 'react';
+import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, Brain, Activity, Zap, Network, User, Cpu, FileWarning, Fingerprint, RotateCcw, Loader2, AlertTriangle } from 'lucide-react';
+import {
+  ShieldAlert, Brain, Activity, Zap, Network, User, Cpu, FileWarning, Fingerprint,
+  RotateCcw, Loader2, AlertTriangle, Users, Server, Globe, Database as DatabaseIcon,
+  ZoomIn, ZoomOut, Maximize2,
+} from 'lucide-react';
 import type { GraphResponse, ScenarioName } from '../types';
 import { getGraph, getScenarios, simulate, analyze, ApiClientError } from '../api/client';
 import { useAnalysis } from '../context/AnalysisContext';
@@ -17,9 +21,53 @@ interface LaidOutNode {
 }
 
 const VIEW_W = 1000;
-const PER_ROW = 6;
+const PER_ROW = 4;
 const ROW_GAP = 120;
 const BLOCK_GAP = 30;
+const BOX_W = 150;
+const BOX_H = 54;
+
+// Type-coded styling so every node reads as "what kind of thing is this" at a
+// glance, independent of its root-cause/affected severity state (which is
+// layered on top via border color + the on-graph tag — see node rendering).
+const TYPE_STYLE: Record<string, { color: string; Icon: typeof Users }> = {
+  Team: { color: '#a78bfa', Icon: Users },
+  Service: { color: '#22d3ee', Icon: Server },
+  Vendor: { color: '#4ade80', Icon: Globe },
+  Database: { color: '#fbbf24', Icon: DatabaseIcon },
+};
+const DEFAULT_TYPE_STYLE = { color: '#a1a1aa', Icon: Server };
+
+// Splits a node name onto at most 2 lines (breaking at the space closest to
+// the middle) so long labels stay inside the fixed-width box instead of
+// overflowing into neighboring nodes.
+function wrapLabel(name: string, maxLen = 15): string[] {
+  if (name.length <= maxLen) return [name];
+  let splitAt = -1;
+  let bestDist = Infinity;
+  const mid = name.length / 2;
+  for (let i = 0; i < name.length; i++) {
+    if (name[i] === ' ') {
+      const dist = Math.abs(i - mid);
+      if (dist < bestDist) {
+        bestDist = dist;
+        splitAt = i;
+      }
+    }
+  }
+  if (splitAt === -1) return [name];
+  return [name.slice(0, splitAt), name.slice(splitAt + 1)];
+}
+
+// Finds where a line from a box's center in direction (dx,dy) exits the box,
+// so edges connect to box edges instead of drawing through their centers.
+function clipToBox(cx: number, cy: number, dx: number, dy: number, hw: number, hh: number): { x: number; y: number } {
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const scaleX = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+  const scaleY = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+  const scale = Math.min(scaleX, scaleY);
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
 
 const spread = (count: number, idx: number) => ((idx + 1) * VIEW_W) / (count + 1);
 
@@ -177,6 +225,45 @@ export default function Dashboard() {
     [graph]
   );
   const posById = useMemo(() => new Map(laidOut.map((n) => [n.id, n])), [laidOut]);
+
+  // Pan/zoom for the topology canvas. Reset whenever a new graph loads so a
+  // fresh upload never opens on a stale zoomed/panned view.
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [graph]);
+  // Attached as a native listener (not React's onWheel) with { passive: false }
+  // — React's synthetic wheel handler can't reliably call preventDefault()
+  // since the root listener is registered passive, which would let the page
+  // scroll underneath the graph at the same time it zooms.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((z) => Math.min(2.5, Math.max(0.4, +(z - e.deltaY * 0.001).toFixed(2))));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+  const handlePanStart = (e: React.MouseEvent) => {
+    dragStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+  };
+  const handlePanMove = (e: React.MouseEvent) => {
+    if (!dragStart.current) return;
+    setPan({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y });
+  };
+  const handlePanEnd = () => {
+    dragStart.current = null;
+  };
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
 
   const analysisComplete = phase === 'done' && !!analysis;
 
@@ -338,20 +425,23 @@ export default function Dashboard() {
 
         {/* PANEL 2: GRAPH MAPPING */}
         <div className="xl:col-span-6 h-[400px] lg:h-[500px] xl:min-h-[500px] bg-[#0d0d0f] border border-zinc-900 rounded relative overflow-hidden flex flex-col shrink-0">
-           <div className="p-3 border-b border-zinc-900 flex items-center justify-between z-10 bg-zinc-950/50 backdrop-blur">
+           <div className="p-3 border-b border-zinc-900 flex items-center justify-between z-10 bg-zinc-950/50 backdrop-blur flex-wrap gap-2">
             <h2 className="font-mono text-sm md:text-base uppercase tracking-widest font-semibold text-zinc-300 flex items-center gap-2">
               <Network className="w-4 h-4 md:w-5 md:h-5 text-cyan-500" /> Topographic Network
             </h2>
-            {analysisComplete && (
-              <div className="hidden sm:flex items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-sm bg-amber-500" /> Root Cause
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-sm bg-red-500" /> Affected
-                </span>
-              </div>
-            )}
+            <div className="hidden md:flex items-center gap-2.5 text-[9px] font-mono uppercase tracking-widest text-zinc-500 flex-wrap justify-end">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Team.color }} />Team</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Service.color }} />Service</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Vendor.color }} />Vendor</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Database.color }} />Database</span>
+              {analysisComplete && (
+                <>
+                  <span className="text-zinc-700">|</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500" />Root Cause</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500" />Affected</span>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex-1 relative bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/50 via-zinc-950 to-zinc-950">
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:2rem_2rem] border-zinc-800"></div>
@@ -368,60 +458,98 @@ export default function Dashboard() {
                 <button onClick={loadGraph} className="px-3 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-xs font-mono uppercase tracking-wider hover:bg-zinc-800">Retry</button>
               </div>
             ) : (
-              <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${VIEW_W} ${viewH}`} preserveAspectRatio="xMidYMid meet">
-                <defs>
-                  <filter id="glow-amber"><feGaussianBlur stdDeviation="4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                  <filter id="glow-cyan"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                </defs>
+              <div
+                ref={canvasRef}
+                className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                onMouseDown={handlePanStart}
+                onMouseMove={handlePanMove}
+                onMouseUp={handlePanEnd}
+                onMouseLeave={handlePanEnd}
+              >
+                <svg
+                  className="w-full h-full"
+                  viewBox={`0 0 ${VIEW_W} ${viewH}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '50% 50%' }}
+                >
+                  <defs>
+                    <filter id="glow-root"><feGaussianBlur stdDeviation="4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                    <marker id="arrow-default" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0,0 L10,5 L0,10 z" fill="#52525b" />
+                    </marker>
+                    <marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0,0 L10,5 L0,10 z" fill="#f59e0b" />
+                    </marker>
+                  </defs>
 
-                {graph?.relationships.map((edge, i) => {
-                  const s = posById.get(edge.source);
-                  const t = posById.get(edge.target);
-                  if (!s || !t) return null;
-                  const active = analysisComplete && (
-                    edge.source === rootId || edge.target === rootId ||
-                    affectedIds.has(edge.source) || affectedIds.has(edge.target)
-                  );
-                  return (
-                    <motion.line
-                      key={i}
-                      x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-                      stroke={active ? '#f59e0b' : '#27272a'}
-                      strokeWidth={active ? 2 : 1}
-                      animate={{
-                        stroke: active ? ['#f59e0b', '#fbbf24', '#f59e0b'] : '#27272a',
-                        opacity: analysisComplete && !active ? 0.15 : 1,
-                      }}
-                      transition={{ repeat: active ? Infinity : 0, duration: 2 }}
-                    />
-                  );
-                })}
-
-                {laidOut.map((node) => {
-                  const state = nodeState(node.id);
-                  const isRoot = state === 'root';
-                  const isAffected = state === 'affected';
-                  const baseColor =
-                    node.status === 'critical' ? '#ef4444' : node.status === 'warning' ? '#f59e0b' : '#06b6d4';
-                  const stroke = isRoot ? '#f59e0b' : isAffected ? '#ef4444' : analysisComplete ? '#3f3f46' : baseColor;
-                  return (
-                    <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
-                      <motion.rect
-                        x="-7" y="-7" width="14" height="14"
-                        fill="#09090b"
-                        stroke={stroke}
-                        strokeWidth={isRoot ? 2.5 : 1.5}
-                        filter={isRoot ? 'url(#glow-amber)' : 'url(#glow-cyan)'}
-                        animate={{ scale: isRoot ? [1, 1.25, 1] : 1 }}
-                        transition={{ repeat: isRoot ? Infinity : 0, duration: 1.5 }}
-                        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-                        transform="rotate(45)"
+                  {graph?.relationships.map((edge, i) => {
+                    const s = posById.get(edge.source);
+                    const t = posById.get(edge.target);
+                    if (!s || !t) return null;
+                    const active = analysisComplete && (
+                      edge.source === rootId || edge.target === rootId ||
+                      affectedIds.has(edge.source) || affectedIds.has(edge.target)
+                    );
+                    const isOwnership = edge.type === 'OWNED_BY';
+                    const dx = t.x - s.x;
+                    const dy = t.y - s.y;
+                    const start = clipToBox(s.x, s.y, dx, dy, BOX_W / 2, BOX_H / 2);
+                    const end = clipToBox(t.x, t.y, -dx, -dy, BOX_W / 2, BOX_H / 2);
+                    return (
+                      <motion.line
+                        key={i}
+                        x1={start.x} y1={start.y} x2={end.x} y2={end.y}
+                        stroke={active ? '#f59e0b' : '#3f3f46'}
+                        strokeWidth={active ? 2 : 1.25}
+                        strokeDasharray={isOwnership ? '4 3' : undefined}
+                        markerEnd={isOwnership ? undefined : (active ? 'url(#arrow-active)' : 'url(#arrow-default)')}
+                        animate={{
+                          stroke: active ? ['#f59e0b', '#fbbf24', '#f59e0b'] : '#3f3f46',
+                          opacity: analysisComplete && !active ? 0.15 : 1,
+                        }}
+                        transition={{ repeat: active ? Infinity : 0, duration: 2 }}
                       />
-                      {isRoot && (
-                        <>
-                          <circle r="34" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="2 4" className="animate-[spin_6s_linear_infinite] opacity-40" />
-                          <g transform="translate(0, -30)">
-                            <rect x="-40" y="-10" width="80" height="18" rx="2" fill="#f59e0b" />
+                    );
+                  })}
+
+                  {laidOut.map((node) => {
+                    const state = nodeState(node.id);
+                    const isRoot = state === 'root';
+                    const isAffected = state === 'affected';
+                    const style = TYPE_STYLE[node.type] || DEFAULT_TYPE_STYLE;
+                    const Icon = style.Icon;
+                    const borderColor = isRoot ? '#ef4444' : isAffected ? '#f59e0b' : style.color;
+                    const labelColor = isRoot ? '#fca5a5' : isAffected ? '#fbbf24' : '#d4d4d8';
+                    const iconColor = isRoot ? '#f87171' : isAffected ? '#fbbf24' : style.color;
+                    const lines = wrapLabel(node.name);
+                    return (
+                      <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
+                        <motion.rect
+                          x={-BOX_W / 2} y={-BOX_H / 2} width={BOX_W} height={BOX_H} rx="7"
+                          fill="#09090b"
+                          stroke={borderColor}
+                          strokeWidth={isRoot ? 2.5 : isAffected ? 2 : 1.25}
+                          filter={isRoot ? 'url(#glow-root)' : undefined}
+                          animate={{ scale: isRoot ? [1, 1.04, 1] : 1 }}
+                          transition={{ repeat: isRoot ? Infinity : 0, duration: 1.6 }}
+                          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+                        />
+                        <Icon x={-8} y={-19} width={16} height={16} color={iconColor} strokeWidth={2} />
+                        {lines.map((line, li) => (
+                          <text
+                            key={li}
+                            y={lines.length === 1 ? 14 : 5 + li * 11}
+                            fontSize="10"
+                            textAnchor="middle"
+                            fill={labelColor}
+                            className="font-mono tracking-wide uppercase font-semibold"
+                          >
+                            {line}
+                          </text>
+                        ))}
+                        {isRoot && (
+                          <g transform={`translate(0, ${-BOX_H / 2 - 15})`}>
+                            <rect x="-40" y="-9" width="80" height="17" rx="2" fill="#ef4444" />
                             <text
                               y="1" fontSize="9" fontWeight="700"
                               textAnchor="middle" dominantBaseline="middle"
@@ -431,27 +559,39 @@ export default function Dashboard() {
                               Root Cause
                             </text>
                           </g>
-                        </>
-                      )}
-                      <text
-                        y="26" fontSize="13"
-                        fill={isRoot ? '#fbbf24' : isAffected ? '#fca5a5' : '#a1a1aa'}
-                        textAnchor="middle"
-                        className="font-mono tracking-wide uppercase"
-                      >
-                        {node.name}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-            )}
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
 
-            {analysisComplete && analysis && (
-               <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-zinc-950/90 py-2 px-4 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.2)] flex items-center gap-3 rounded">
-                  <div className="w-1.5 h-1.5 bg-amber-500 animate-pulse" />
-                  <span className="font-mono text-xs uppercase tracking-widest text-amber-500 font-bold">Root Node Isolate: {analysis.rootCause}</span>
-               </div>
+                <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.2).toFixed(2)))}
+                    className="w-7 h-7 flex items-center justify-center rounded bg-zinc-900/90 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                    title="Zoom in"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.2).toFixed(2)))}
+                    className="w-7 h-7 flex items-center justify-center rounded bg-zinc-900/90 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                    title="Zoom out"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={resetView}
+                    className="w-7 h-7 flex items-center justify-center rounded bg-zinc-900/90 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                    title="Reset view"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -470,9 +610,9 @@ export default function Dashboard() {
                 {/* RCA Banner */}
                 <div>
                   <div className="text-xs md:text-sm font-mono text-zinc-500 mb-1.5 uppercase tracking-widest">Identified Root Cause</div>
-                  <div className="p-3 bg-amber-500/10 border-l-4 border-amber-500">
+                  <div className="p-3 bg-red-500/10 border-l-4 border-red-500">
                     <div className="flex items-center gap-2 mb-1">
-                      <ShieldAlert className="w-4 h-4 text-amber-500 md:w-5 md:h-5" />
+                      <ShieldAlert className="w-4 h-4 text-red-500 md:w-5 md:h-5" />
                       <div className="text-sm md:text-base font-semibold text-zinc-100 uppercase tracking-widest">{analysis.rootCause}</div>
                     </div>
                     {analysis.rootCauseType && (
@@ -491,14 +631,18 @@ export default function Dashboard() {
 
                 <div>
                   <div className="text-xs md:text-sm font-mono text-zinc-500 mb-3 uppercase tracking-wide">Blast Radius (Affected)</div>
-                  <div className="flex flex-col gap-2">
-                    {analysis.affectedServices.map((s) => (
-                      <span key={s} className="px-2.5 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs md:text-sm font-mono">Service::{s}</span>
-                    ))}
-                    {analysis.affectedTeams.map((t) => (
-                      <span key={t} className="px-2.5 py-1.5 bg-zinc-800 text-zinc-400 text-xs md:text-sm font-mono">Team::{t}</span>
-                    ))}
-                  </div>
+                  {analysis.affectedServices.length === 0 && analysis.affectedTeams.length === 0 ? (
+                    <div className="text-xs md:text-sm text-zinc-600 font-mono italic">No downstream services affected by this incident.</div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {analysis.affectedServices.map((s) => (
+                        <span key={s} className="px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs md:text-sm font-mono">Service::{s}</span>
+                      ))}
+                      {analysis.affectedTeams.map((t) => (
+                        <span key={t} className="px-2.5 py-1.5 bg-zinc-800 text-zinc-400 text-xs md:text-sm font-mono">Team::{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {analysis.historicalMatch && (

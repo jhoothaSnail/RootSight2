@@ -1,4 +1,4 @@
-export type ViewState = 'home' | 'dashboard' | 'architecture' | 'runbooks' | 'org' | 'incidents';
+export type ViewState = 'home' | 'dashboard' | 'architecture' | 'runbooks' | 'org' | 'incidents' | 'login' | 'signup';
 
 // GET /api/incidents
 export interface IncidentRecord {

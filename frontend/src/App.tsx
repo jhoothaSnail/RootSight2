@@ -8,6 +8,7 @@ import Architecture from './components/Architecture';
 import Runbooks from './components/Runbooks';
 import IncidentHistory from './components/IncidentHistory';
 import Login from './components/Login';
+import Signup from './components/Signup';
 import { Logo } from './components/Logo';
 import { useAuth } from './context/AuthContext';
 import type { ViewState } from './types';
@@ -17,11 +18,25 @@ const PROTECTED_VIEWS: ViewState[] = ['dashboard', 'architecture', 'runbooks', '
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('home');
   const [navCollapsed, setNavCollapsed] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
 
   // Guard protected areas: any workspace view requires an authenticated session.
   const isProtected = PROTECTED_VIEWS.includes(currentView);
   const effectiveView: ViewState = isProtected && !isAuthenticated ? 'login' : currentView;
+
+  // The cached session (if any) is re-validated against the backend
+  // asynchronously on load. Hold a neutral splash rather than flashing
+  // Login before that check completes.
+  if (loading) {
+    return (
+      <div className="absolute inset-0 bg-zinc-950 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-zinc-500 font-mono text-xs uppercase tracking-widest">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          Loading workspace...
+        </div>
+      </div>
+    );
+  }
 
   const renderView = () => {
     switch (effectiveView) {
@@ -39,6 +54,8 @@ export default function App() {
         return <IncidentHistory />;
       case 'login':
         return <Login onNavigate={setCurrentView} />;
+      case 'signup':
+        return <Signup onNavigate={setCurrentView} />;
       default:
         return <Home onNavigate={setCurrentView} />;
     }
@@ -56,7 +73,7 @@ export default function App() {
     <div className="absolute inset-0 overflow-hidden bg-zinc-950 text-zinc-50 flex selection:bg-amber-500/30">
       
       {/* Sidebar Navigation */}
-      {effectiveView !== 'home' && effectiveView !== 'login' && (
+      {effectiveView !== 'home' && effectiveView !== 'login' && effectiveView !== 'signup' && (
         <>
           {/* Mobile Overlay */}
           {!navCollapsed && (
@@ -147,7 +164,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 relative h-full flex flex-col overflow-hidden w-full">
         {/* Mobile Header Toggle */}
-        {effectiveView !== 'home' && effectiveView !== 'login' && (
+        {effectiveView !== 'home' && effectiveView !== 'login' && effectiveView !== 'signup' && (
           <div className="md:hidden flex items-center justify-between p-4 border-b border-zinc-900 bg-zinc-950 shrink-0">
              <div className="flex items-center gap-2">
                <Logo className="w-6 h-6 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)]" />

@@ -1,71 +1,55 @@
 import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Mail, Lock, Eye, EyeOff, ShieldCheck, Sparkles, Check } from 'lucide-react';
+import { ArrowRight, Mail, Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { Logo } from './Logo';
 import WorkspacePreview from './WorkspacePreview';
 import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
 
-interface LoginProps {
+interface SignupProps {
   onNavigate: (view: ViewState) => void;
 }
 
 const PENDING_INTENT_KEY = 'rootsight_pending_initialize';
 
-const FEATURE_INDICATORS = [
-  'AI Root Cause Analysis',
-  'Incident History',
-  'Blast Radius Simulation',
-  'Dynamic Runbooks',
-];
-
-export default function Login({ onNavigate }: LoginProps) {
-  const { login, loginDemo } = useAuth();
+export default function Signup({ onNavigate }: SignupProps) {
+  const { signup } = useAuth();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // If Login was reached mid "Initialize Analysis", send the user back into
-  // Home so it can resume straight into the Upload Section. Otherwise land
-  // on the Analysis Engine like a normal sign-in.
-  const navigateAfterAuth = () => {
-    const hadPendingIntent = sessionStorage.getItem(PENDING_INTENT_KEY);
-    onNavigate(hadPendingIntent ? 'home' : 'dashboard');
-  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter both email and password.');
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      setError('Please fill in every field.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password should be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await login(email.trim(), password);
-      navigateAfterAuth();
+      await signup(name.trim(), email.trim(), password);
+      // New signups land straight in the Upload Section, same as an
+      // in-flight "Initialize Analysis" intent would.
+      sessionStorage.setItem(PENDING_INTENT_KEY, '1');
+      onNavigate('home');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Could not create your account. Please try again.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleDemoWorkspace = async () => {
-    setError('');
-    setIsDemoLoading(true);
-    try {
-      await loginDemo();
-      navigateAfterAuth();
-    } catch {
-      setError('Could not start the demo workspace. Please try again.');
-    } finally {
-      setIsDemoLoading(false);
     }
   };
 
@@ -90,24 +74,15 @@ export default function Login({ onNavigate }: LoginProps) {
           >
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-zinc-900/80 border border-zinc-800 rounded font-mono text-xs text-zinc-400 uppercase tracking-widest mb-6 backdrop-blur-sm">
               <ShieldCheck className="w-4 h-4 text-amber-500" />
-              Secure Workspace Access
+              Create Your Workspace
             </div>
 
             <h1 className="font-display font-bold tracking-tight text-zinc-100 text-3xl md:text-4xl mb-2">
-              This is your RootSight workspace.
+              Start your free trial.
             </h1>
-            <p className="text-zinc-400 font-light mb-5 text-sm md:text-base">
-              Sign in to reach your saved analyses, incident history, and runbook library — free to start.
+            <p className="text-zinc-400 font-light mb-8 text-sm md:text-base">
+              No credit card required. Your workspace, analyses, and runbooks persist from day one.
             </p>
-
-            <div className="flex flex-wrap gap-x-5 gap-y-2 mb-8">
-              {FEATURE_INDICATORS.map((feature) => (
-                <div key={feature} className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono">
-                  <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-                  {feature}
-                </div>
-              ))}
-            </div>
           </motion.div>
 
           <motion.form
@@ -118,6 +93,24 @@ export default function Login({ onNavigate }: LoginProps) {
             className="flex flex-col gap-5"
             noValidate
           >
+            <div className="flex flex-col gap-2">
+              <label htmlFor="name" className="text-xs font-mono uppercase tracking-widest text-zinc-500">
+                Name
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-zinc-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  id="name"
+                  type="text"
+                  autoComplete="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Jane Doe"
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded pl-10 pr-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition-colors focus:border-amber-500/60 focus:bg-zinc-900"
+                />
+              </div>
+            </div>
+
             <div className="flex flex-col gap-2">
               <label htmlFor="email" className="text-xs font-mono uppercase tracking-widest text-zinc-500">
                 Email
@@ -137,26 +130,15 @@ export default function Login({ onNavigate }: LoginProps) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-xs font-mono uppercase tracking-widest text-zinc-500">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    /* Wired to a real Forgot Password flow in the next phase */
-                  }}
-                  className="text-xs font-mono text-zinc-500 hover:text-amber-500 transition-colors"
-                >
-                  Forgot password?
-                </button>
-              </div>
+              <label htmlFor="password" className="text-xs font-mono uppercase tracking-widest text-zinc-500">
+                Password
+              </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-zinc-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -173,6 +155,24 @@ export default function Login({ onNavigate }: LoginProps) {
               </div>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <label htmlFor="confirmPassword" className="text-xs font-mono uppercase tracking-widest text-zinc-500">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-zinc-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  id="confirmPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded pl-10 pr-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition-colors focus:border-amber-500/60 focus:bg-zinc-900"
+                />
+              </div>
+            </div>
+
             {error && (
               <div className="text-xs font-mono text-red-400 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">
                 {error}
@@ -184,40 +184,21 @@ export default function Login({ onNavigate }: LoginProps) {
               disabled={isSubmitting}
               className="group relative inline-flex items-center justify-center gap-3 px-8 py-4 rounded bg-gradient-to-r from-amber-500 to-orange-600 text-zinc-950 font-bold uppercase tracking-wider text-sm transition-all hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(245,158,11,0.4)] active:scale-95 disabled:opacity-60 disabled:hover:scale-100 disabled:hover:shadow-none mt-1"
             >
-              {isSubmitting ? 'Signing In...' : 'Sign In'}
+              {isSubmitting ? 'Creating Workspace...' : 'Create Workspace'}
               {!isSubmitting && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />}
             </button>
 
             <p className="text-center text-sm text-zinc-500 mt-2">
-              Don&apos;t have an account?{' '}
+              Already have a workspace?{' '}
               <button
                 type="button"
-                onClick={() => onNavigate('signup')}
+                onClick={() => onNavigate('login')}
                 className="text-amber-500 hover:text-amber-400 font-medium transition-colors"
               >
-                Sign up
+                Sign in
               </button>
             </p>
           </motion.form>
-
-          <div className="flex items-center gap-3 my-6">
-            <div className="h-px flex-1 bg-zinc-800" />
-            <span className="text-xs font-mono text-zinc-600 uppercase tracking-widest">or</span>
-            <div className="h-px flex-1 bg-zinc-800" />
-          </div>
-
-          <button
-            type="button"
-            onClick={handleDemoWorkspace}
-            disabled={isDemoLoading}
-            className="group inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-teal-500/40 text-zinc-300 hover:text-white font-semibold uppercase tracking-wider text-xs transition-all backdrop-blur-sm disabled:opacity-60"
-          >
-            <Sparkles className="w-4 h-4 text-teal-500" />
-            {isDemoLoading ? 'Entering Workspace...' : 'Enter Demo Workspace'}
-          </button>
-          <p className="text-center text-xs text-zinc-600 mt-3 font-mono uppercase tracking-widest">
-            Free Workspace Trial &middot; No Credit Card Required
-          </p>
         </div>
 
         <div className="text-xs font-mono text-zinc-600 uppercase tracking-widest pt-6">

@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
@@ -10,6 +11,17 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { PDFParse } from "pdf-parse";
 import { parse as csvParse } from "csv-parse/sync";
 import { SCENARIOS, getScenario, listScenarioNames } from "./scenarios.js";
+import {
+  loadUsers,
+  saveUsers,
+  hashPassword,
+  verifyPassword,
+  publicUser,
+  createSession,
+  getSession,
+  destroySession,
+  bearerToken,
+} from "./auth.js";
 
 dotenv.config();
 
@@ -469,6 +481,107 @@ const upload = multer({
 // Health check
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// ─── Auth ───────────────────────────────────────────────────────────────────
+// Lightweight, demo-safe session auth — see backend/auth.js for the storage
+// and hashing rationale. No Firebase, no OAuth, no JWTs.
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+app.post("/api/auth/signup", (req, res) => {
+  const { name, email, password } = req.body || {};
+
+  if (!name || !String(name).trim()) {
+    return structuredError(res, 400, "INVALID_NAME", "Name is required.");
+  }
+  if (!email || !EMAIL_RE.test(String(email))) {
+    return structuredError(res, 400, "INVALID_EMAIL", "Please enter a valid email address.");
+  }
+  if (!password || String(password).length < 6) {
+    return structuredError(res, 400, "WEAK_PASSWORD", "Password should be at least 6 characters.");
+  }
+
+  const users = loadUsers();
+  const normalizedEmail = String(email).trim().toLowerCase();
+  if (users.some((u) => u.email === normalizedEmail)) {
+    return structuredError(res, 409, "EMAIL_IN_USE", "An account with this email already exists.");
+  }
+
+  const user = {
+    id: crypto.randomUUID(),
+    name: String(name).trim(),
+    email: normalizedEmail,
+    passwordHash: hashPassword(String(password)),
+    isDemo: false,
+    createdAt: new Date().toISOString(),
+  };
+  users.push(user);
+  saveUsers(users);
+
+  const token = createSession(user.id);
+  res.json({ success: true, token, user: publicUser(user) });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return structuredError(res, 400, "MISSING_FIELDS", "Email and password are required.");
+  }
+
+  const users = loadUsers();
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const user = users.find((u) => u.email === normalizedEmail);
+  if (!user || !verifyPassword(String(password), user.passwordHash)) {
+    return structuredError(res, 401, "INVALID_CREDENTIALS", "Incorrect email or password.");
+  }
+
+  const token = createSession(user.id);
+  res.json({ success: true, token, user: publicUser(user) });
+});
+
+// One-click access for hackathon judges — no typing, always succeeds.
+// Reuses a single persisted demo account so a demo session behaves like any
+// other workspace (survives refresh, shows up consistently) rather than
+// being a special client-only code path.
+app.post("/api/auth/demo", (_req, res) => {
+  const users = loadUsers();
+  let demoUser = users.find((u) => u.isDemo);
+  if (!demoUser) {
+    demoUser = {
+      id: "demo-workspace",
+      name: "Demo Workspace",
+      email: "demo@rootsight.ai",
+      passwordHash: hashPassword(crypto.randomBytes(16).toString("hex")),
+      isDemo: true,
+      createdAt: new Date().toISOString(),
+    };
+    users.push(demoUser);
+    saveUsers(users);
+  }
+
+  const token = createSession(demoUser.id);
+  res.json({ success: true, token, user: publicUser(demoUser) });
+});
+
+app.get("/api/auth/me", (req, res) => {
+  const session = getSession(bearerToken(req));
+  if (!session) {
+    return structuredError(res, 401, "UNAUTHENTICATED", "Session expired or invalid.");
+  }
+
+  const users = loadUsers();
+  const user = users.find((u) => u.id === session.userId);
+  if (!user) {
+    return structuredError(res, 401, "UNAUTHENTICATED", "Session expired or invalid.");
+  }
+
+  res.json({ success: true, user: publicUser(user) });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  destroySession(bearerToken(req));
+  res.json({ success: true });
 });
 
 // ─── POST /api/upload ─────────────────────────────────────────────────────────

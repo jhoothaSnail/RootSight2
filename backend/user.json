@@ -1,0 +1,10 @@
+[
+  {
+    "id": "demo-workspace",
+    "name": "Demo Workspace",
+    "email": "demo@rootsight.ai",
+    "passwordHash": "ff37152a12790fb1ba9e750dfb96c30a:080538d3b257b795a9b8d923200756cf58997ab9e1a30d2dff7a1b3a65a080fd858e2682e03fb34b564c0cb97dff96c404a156e20c539ebaf52d19ebb20c31e3",
+    "isDemo": true,
+    "createdAt": "2026-07-08T07:07:58.328Z"
+  }
+]
