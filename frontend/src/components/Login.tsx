@@ -247,3 +247,4 @@ export default function Login({ onNavigate }: LoginProps) {
     </div>
   );
 }
+
