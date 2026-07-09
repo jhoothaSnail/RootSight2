@@ -114,10 +114,12 @@ ENTITY TYPES — extract ALL instances of each:
 services    → Internal microservices, APIs, backend applications, daemons
               Examples: "Auth Service", "Payment API", "User Service", "API Gateway",
               "Order Worker", "Recommendation Engine", "Background Job"
+              Also set "category" and "description" (see CATEGORY INFERENCE below).
 
 vendors     → External third-party providers, SaaS tools, cloud platforms
               Examples: "Google OAuth", "Twilio", "Razorpay", "Stripe", "AWS S3",
               "Datadog", "PagerDuty", "SendGrid", "Cloudflare"
+              Also set "category" and "description" (see CATEGORY INFERENCE below).
 
 teams       → Engineering teams, squads, pods, chapters, departments
               Examples: "Team Alpha", "Platform Team", "Payments Squad",
@@ -126,6 +128,7 @@ teams       → Engineering teams, squads, pods, chapters, departments
 databases   → Any data store, cache, queue, or message broker
               Examples: "PostgreSQL", "Redis", "MongoDB", "Kafka", "Elasticsearch",
               "DynamoDB", "RabbitMQ", "MySQL", "Cassandra"
+              Also set "category" and "description" (see CATEGORY INFERENCE below).
 
 engineers   → Individual people: developers, SREs, on-call responders, managers
               Examples: "Rahul", "Alex Chen", "Priya Sharma", "John (Team Lead)"
@@ -175,6 +178,68 @@ USES         → (Service)-[:USES]->(Database) or (Engineer)-[:USES]->(tool)
                "Payment Service uses Kafka for events"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CATEGORY INFERENCE — for "services", "vendors", "databases" only:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every service, vendor, and database entity must also include a "category"
+field describing its FUNCTIONAL role. Infer this dynamically from the
+document's own wording — its description, purpose, keywords, what it
+depends on, who owns it, and what other entities it relates to. This must
+work for companies and technologies you have never seen before, so:
+
+- NEVER base the category on brand recognition (e.g. do not assume a
+  category just because a name looks like a well-known product). Base it
+  purely on the functional role described in the text.
+- NEVER default to a generic placeholder like "Service" or "Vendor" when
+  the document gives you enough context to be more specific — read
+  descriptions, nearby sentences, and relationships to disambiguate.
+- Pick the closest label from this list when it fits:
+  "API Gateway", "Authentication & Identity", "Payment & Billing",
+  "Messaging & Notifications", "Monitoring & Observability", "Logging",
+  "Search & Discovery", "User & Account Management", "Background Processing",
+  "Analytics & Reporting", "Core Business Logic", "Authentication & Identity Provider",
+  "Payment Processor", "Communications Provider", "Cloud Infrastructure",
+  "Storage & CDN", "Analytics Provider", "Security & Compliance",
+  "Third-Party Integration", "Relational Database", "Document / NoSQL Database",
+  "Cache", "Message Queue / Broker", "Search Index", "Object Storage",
+  "Data Warehouse".
+- If none of those genuinely fit, write your own short (2-4 word) functional
+  category describing what the entity actually does — do not leave it blank.
+- "Background Processing" is specifically for scheduled/batch/cron jobs,
+  queue workers, nightly syncs, reconciliation or optimization runs, and any
+  other process that runs on its own schedule or trigger rather than serving
+  live requests — as opposed to a business-facing API/service that responds
+  to user or client requests directly. If the document describes something
+  as scheduled, periodic, nightly, batch, cron-triggered, or a background
+  sync/reconciliation/optimization run, classify it as "Background
+  Processing" even if its name alone doesn't say so. When you do, and its
+  name doesn't already indicate that (e.g. doesn't contain "Job", "Worker",
+  "Scheduler", "Cron", "Batch", "Pipeline"...), append " Job" to its "name"
+  (replacing a trailing generic word like "Service"/"API" with "Job" instead
+  of stacking both) so the name and category agree — e.g. "Shipment
+  Synchronization Service" → name "Shipment Synchronization Job", category
+  "Background Processing"; "Route Optimization" → name "Route Optimization
+  Job", category "Background Processing".
+
+Also set "description" on every service/vendor/database: ONE short sentence
+(max ~20 words) stating what it actually does, taken from or closely
+paraphrasing the document's own wording. If the document truly gives no
+descriptive detail for an entity beyond its name, omit "description"
+(or set it to null) rather than inventing one.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NAMING CONSISTENCY:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If the document refers to the same real component by more than one name
+(e.g. "Admin Dashboard" in one paragraph, "Admin Dashboard Service" in
+another), extract it as ONE entity with ONE consistent name — never as two
+separate entities. Prefer whichever form is more complete/descriptive.
+Apply one consistent naming style across all your "services"/"vendors"/
+"databases" — don't mix bare names and role-suffixed names arbitrarily for
+entities of the same kind.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRICT RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -189,13 +254,16 @@ STRICT RULES:
 6. source and target values must be ids that exist in the entities you return.
 7. If no entities of a type exist in the document, return an empty array [] for that key.
 8. IDs must be globally unique across ALL entity types combined.
+9. "services", "vendors", and "databases" entities MUST also include "category"
+   per the CATEGORY INFERENCE rules above, and "description" when the
+   document supports one.
 
 OUTPUT FORMAT — return exactly this structure:
 {
-  "services": [{ "id": "string", "name": "string" }],
-  "vendors": [{ "id": "string", "name": "string" }],
+  "services": [{ "id": "string", "name": "string", "category": "string", "description": "string | null" }],
+  "vendors": [{ "id": "string", "name": "string", "category": "string", "description": "string | null" }],
   "teams": [{ "id": "string", "name": "string" }],
-  "databases": [{ "id": "string", "name": "string" }],
+  "databases": [{ "id": "string", "name": "string", "category": "string", "description": "string | null" }],
   "engineers": [{ "id": "string", "name": "string" }],
   "incidents": [{ "id": "string", "name": "string" }],
   "runbooks": [{ "id": "string", "name": "string" }],
@@ -350,6 +418,356 @@ function validateSchema(parsed) {
   return errors;
 }
 
+// ─── Category Inference (Architecture Map) ────────────────────────────────────
+// Assigns a functional "category" to every service/vendor/database entity so
+// the Architecture Map can show something more useful than a generic
+// "Service"/"Vendor" bucket. Gemini already infers a category from the
+// document context at extraction time (see CATEGORY INFERENCE in the prompt);
+// this module is the deterministic safety net that fills in — or corrects —
+// a category whenever Gemini's output is missing, blank, or not usable, and
+// then does a second pass that infers a category from graph relationships
+// (dependencies/ownership) for anything still uncategorized. Nothing here is
+// tied to any specific product/platform name, so it generalizes to any new
+// company's stack.
+
+// Functional "domain families". Each family maps to the category label used
+// for that family, per entity kind — this is what lets us infer a vendor's
+// category from the service that depends on it (and vice versa) even when
+// the vendor's own name gives no clue.
+const CATEGORY_DOMAIN_FAMILIES = {
+  authentication: { service: "Authentication & Identity", vendor: "Authentication & Identity Provider", database: null },
+  payment:        { service: "Payment & Billing", vendor: "Payment Processor", database: null },
+  messaging:      { service: "Messaging & Notifications", vendor: "Communications Provider", database: "Message Queue / Broker" },
+  monitoring:     { service: "Monitoring & Observability", vendor: "Monitoring & Observability", database: null },
+  logging:        { service: "Logging", vendor: null, database: null },
+  search:         { service: "Search & Discovery", vendor: null, database: "Search Index" },
+  security:       { service: null, vendor: "Security & Compliance", database: null },
+  cache:          { service: null, vendor: null, database: "Cache" },
+  gateway:        { service: "API Gateway", vendor: null, database: null },
+  background:     { service: "Background Processing", vendor: null, database: null },
+  analytics:      { service: "Analytics & Reporting", vendor: "Analytics Provider", database: "Data Warehouse" },
+  storage:        { service: null, vendor: "Storage & CDN", database: "Object Storage" },
+  infrastructure: { service: null, vendor: "Cloud Infrastructure", database: null },
+  user:           { service: "User & Account Management", vendor: null, database: null },
+  document:       { service: null, vendor: null, database: "Document / NoSQL Database" },
+  relational:     { service: null, vendor: null, database: "Relational Database" },
+};
+
+// Ordered so more specific/business-meaningful families are tried before
+// broad, structural ones (e.g. "Payment Gateway" should resolve to payment,
+// not gateway). Keywords are generic technology/domain vocabulary only —
+// never a brand or product name.
+const CATEGORY_KEYWORD_RULES = [
+  { family: "authentication", keywords: ["auth", "login", "sign in", "sign-in", "signin", "sso", "identity", "oauth", "session", "password", "credential", "token", "mfa", "2fa"] },
+  { family: "payment",        keywords: ["payment", "pay", "billing", "invoice", "checkout", "subscription", "pricing", "ledger", "wallet", "refund"] },
+  { family: "messaging",      keywords: ["notification", "notify", "email", "sms", "alert", "message", "messaging", "push", "chat", "voice", "queue", "broker", "stream", "event bus", "pub/sub"] },
+  { family: "monitoring",     keywords: ["monitor", "metric", "trace", "observab", "apm", "telemetry", "health check", "healthcheck", "uptime", "alerting"] },
+  { family: "logging",        keywords: ["log", "audit"] },
+  { family: "search",         keywords: ["search", "index", "discovery", "recommend"] },
+  { family: "security",       keywords: ["security", "compliance", "fraud", "firewall", "waf", "encryption", "secrets", "vault"] },
+  { family: "cache",          keywords: ["cache", "in-memory", "memcach"] },
+  { family: "gateway",        keywords: ["gateway", "proxy", "ingress", "edge", "bff"] },
+  { family: "background",     keywords: [
+      "worker", "workers", "job", "jobs", "batch", "cron", "scheduler", "scheduled", "schedule",
+      "pipeline", "background", "sync", "synchronization", "synchronize", "synchronizing", "synchronized",
+      "reconciliation", "reconcile", "reconciler", "optimization", "optimizer", "optimize", "optimizing",
+      "aggregation", "aggregator", "aggregate", "ingest", "ingestion", "indexer", "indexing",
+      "poller", "polling", "sweep", "sweeper", "nightly", "periodic", "recurring", "recompute",
+      "recomputation", "rebalance", "rebalancer", "rebalancing", "digest", "etl",
+    ] },
+  { family: "analytics",      keywords: ["analytics", "report", "dashboard", "insight", "tracking", "data platform", "warehouse"] },
+  { family: "storage",        keywords: ["storage", "blob", "bucket", "object store", "file store", "cdn", "content delivery"] },
+  { family: "infrastructure", keywords: ["cloud", "compute", "hosting", "infrastructure", "container", "kubernetes", "orchestration"] },
+  { family: "user",           keywords: ["user", "account", "profile", "registration", "signup", "sign-up", "member", "customer", "team", "organization"] },
+  { family: "document",       keywords: ["document", "nosql", "key-value", "wide-column", "graph database"] },
+  { family: "relational",     keywords: ["sql", "relational", "rdbms"] },
+];
+
+const CATEGORY_FALLBACK_BY_KIND = {
+  service: "Core Business Logic",
+  vendor: "Third-Party Integration",
+  database: "Database",
+};
+
+// Reverse index so a Gemini-provided category string (or a category
+// resolved by keyword match) can be traced back to its domain family, which
+// lets that family propagate to neighboring nodes in the relationship pass.
+const CATEGORY_LABEL_TO_FAMILY = (() => {
+  const map = new Map();
+  for (const [family, byKind] of Object.entries(CATEGORY_DOMAIN_FAMILIES)) {
+    for (const label of Object.values(byKind)) {
+      if (label) map.set(label.toLowerCase(), family);
+    }
+  }
+  return map;
+})();
+
+const ENTITY_KEY_TO_KIND = { services: "service", vendors: "vendor", databases: "database" };
+
+// Matches whole words/phrases only (so "log" doesn't match inside "login").
+function nameMatchesKeyword(name, keyword) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(name);
+}
+
+// Returns the first family (in priority order) whose keywords match the
+// entity's name or description AND whose mapping is non-null for the given
+// entity kind. Scanning the description too (not just the name) lets a
+// vaguely-named entity like "Route Optimization" still resolve correctly
+// when the document's own description calls it a nightly/batch process.
+function inferFamilyFromText(name, description, kind) {
+  const haystack = `${name || ""} ${description || ""}`;
+  for (const rule of CATEGORY_KEYWORD_RULES) {
+    if (!CATEGORY_DOMAIN_FAMILIES[rule.family][kind]) continue;
+    if (rule.keywords.some((kw) => nameMatchesKeyword(haystack, kw))) return rule.family;
+  }
+  return null;
+}
+
+// Normalizes whatever Gemini returned for "category": trims it, and if it
+// happens to match one of our known labels, resolves the family too (purely
+// so it can help propagate categories to related nodes — the label itself
+// is still used verbatim).
+function normalizeProvidedCategory(raw) {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed || /^(service|vendor|database|unknown|n\/a|none)$/i.test(trimmed)) return null;
+  const family = CATEGORY_LABEL_TO_FAMILY.get(trimmed.toLowerCase()) || null;
+  return { label: trimmed, family };
+}
+
+// Main entry point: mutates `extracted.services/vendors/databases` in place,
+// setting `.category` on every entity. Called once, after all uploaded
+// documents have been merged, so relationship-based inference (pass 2) sees
+// the full cross-document graph rather than just one file's view.
+function enrichCategories(extracted) {
+  const resolved = new Map(); // entity id -> { label, family }
+
+  // Pass 1: trust Gemini's own category when it's usable, otherwise fall
+  // back to keyword matching against the entity's own name.
+  for (const [key, kind] of Object.entries(ENTITY_KEY_TO_KIND)) {
+    for (const entity of extracted[key] || []) {
+      const provided = normalizeProvidedCategory(entity.category);
+      if (provided) {
+        resolved.set(entity.id, provided);
+        continue;
+      }
+      const family = inferFamilyFromText(entity.name, entity.description, kind);
+      if (family) {
+        resolved.set(entity.id, { label: CATEGORY_DOMAIN_FAMILIES[family][kind], family });
+      }
+    }
+  }
+
+  // Pass 2: for anything still unresolved, look at directly-connected
+  // neighbors (dependencies, vendor usage, ownership) and adopt the
+  // majority family among neighbors that already have one resolved.
+  const kindById = new Map();
+  for (const [key, kind] of Object.entries(ENTITY_KEY_TO_KIND)) {
+    for (const entity of extracted[key] || []) kindById.set(entity.id, kind);
+  }
+  const neighbors = new Map();
+  const addEdge = (a, b) => {
+    if (!kindById.has(a) || !kindById.has(b)) return;
+    if (!neighbors.has(a)) neighbors.set(a, []);
+    neighbors.get(a).push(b);
+  };
+  for (const rel of extracted.relationships || []) {
+    addEdge(rel.source, rel.target);
+    addEdge(rel.target, rel.source);
+  }
+
+  for (const [key, kind] of Object.entries(ENTITY_KEY_TO_KIND)) {
+    for (const entity of extracted[key] || []) {
+      if (resolved.has(entity.id)) continue;
+      const familyVotes = new Map();
+      for (const neighborId of neighbors.get(entity.id) || []) {
+        const neighborResolved = resolved.get(neighborId);
+        if (!neighborResolved || !neighborResolved.family) continue;
+        if (!CATEGORY_DOMAIN_FAMILIES[neighborResolved.family][kind]) continue;
+        familyVotes.set(neighborResolved.family, (familyVotes.get(neighborResolved.family) || 0) + 1);
+      }
+      if (familyVotes.size > 0) {
+        const bestFamily = [...familyVotes.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        resolved.set(entity.id, { label: CATEGORY_DOMAIN_FAMILIES[bestFamily][kind], family: bestFamily });
+      }
+    }
+  }
+
+  // Pass 3: anything left over gets a per-kind fallback — never the old
+  // one-size-fits-all "Service"/"Vendor" default.
+  for (const [key, kind] of Object.entries(ENTITY_KEY_TO_KIND)) {
+    for (const entity of extracted[key] || []) {
+      const final = resolved.get(entity.id);
+      entity.category = final ? final.label : CATEGORY_FALLBACK_BY_KIND[kind];
+    }
+  }
+
+  return extracted;
+}
+
+// Trims/validates the optional "description" Gemini may have supplied for
+// services/vendors/databases (used by the Architecture Map Node Inspector).
+// Never invents a description — if Gemini didn't provide a usable one, the
+// field is left null so the UI can honestly show "Not Available".
+function enrichDescriptions(extracted) {
+  for (const key of Object.keys(ENTITY_KEY_TO_KIND)) {
+    for (const entity of extracted[key] || []) {
+      const raw = entity.description;
+      if (typeof raw !== "string") {
+        entity.description = null;
+        continue;
+      }
+      const trimmed = raw.trim();
+      entity.description = !trimmed || /^(n\/a|none|unknown|null)$/i.test(trimmed) ? null : trimmed;
+    }
+  }
+  return extracted;
+}
+
+// ─── Naming Consistency (Architecture Map) ─────────────────────────────────────
+// Different uploaded documents sometimes describe the exact same real
+// component with slightly different names (e.g. "Admin Dashboard" in one
+// doc, "Admin Dashboard Service" in another) — extraction has no way to
+// know these are the same thing until everything is merged. This collapses
+// those near-duplicate entities into one, so the Architecture Map never
+// shows the same component twice under two different names. Matching is
+// conservative on purpose (exact name match, or one name being the other
+// plus a generic role word like "Service"/"API") so genuinely different
+// components are never merged just because they share a word.
+
+// Generic role/suffix words that don't change what a component actually
+// is — stripping them is what lets "Admin Dashboard" and "Admin Dashboard
+// Service" compare equal. Never a brand/product name.
+const GENERIC_ROLE_WORDS = new Set([
+  "service", "api", "application", "app", "system", "platform",
+  "microservice", "module", "component", "engine", "daemon",
+  "job", "jobs", "worker", "workers", "scheduler", "process", "task",
+]);
+
+function cleanForCompare(name) {
+  return (name || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function stripGenericRoleWords(cleaned) {
+  const words = cleaned.split(" ").filter(Boolean);
+  const stripped = words.filter((w) => !GENERIC_ROLE_WORDS.has(w));
+  return (stripped.length > 0 ? stripped : words).join(" ");
+}
+
+// True only when two names are extremely likely to refer to the same real
+// component: either identical once cleaned, or identical after stripping
+// generic role words AND one cleaned name is the other plus extra trailing
+// word(s) (so "Payment Gateway" vs "Payment Service" — different core
+// words even after stripping "service" — correctly stays unmerged).
+function isLikelyNameAlias(nameA, nameB) {
+  const cleanA = cleanForCompare(nameA);
+  const cleanB = cleanForCompare(nameB);
+  if (!cleanA || !cleanB) return false;
+  if (cleanA === cleanB) return true;
+
+  const strippedA = stripGenericRoleWords(cleanA);
+  const strippedB = stripGenericRoleWords(cleanB);
+  if (!strippedA || !strippedB || strippedA !== strippedB) return false;
+
+  const [shorter, longer] = cleanA.length <= cleanB.length ? [cleanA, cleanB] : [cleanB, cleanA];
+  return longer === shorter || longer.startsWith(`${shorter} `);
+}
+
+// Collapses near-duplicate services/vendors/databases (see above) into a
+// single entity per real component, keeping whichever alias carries more
+// information (a description/category already present, or otherwise the
+// longer/more descriptive name), and re-points every relationship that
+// referenced a merged-away id onto the surviving one. Teams are
+// deliberately excluded — merging organizational units on a name heuristic
+// is a much riskier guess than merging a clearly-restated service name.
+function mergeAliasedEntities(extracted) {
+  for (const key of Object.keys(ENTITY_KEY_TO_KIND)) {
+    const list = extracted[key] || [];
+    const kept = [];
+    const idRemap = new Map(); // droppedId -> finalKeptId (always fully resolved, never chained)
+
+    for (const entity of list) {
+      const aliasIndex = kept.findIndex((k) => isLikelyNameAlias(k.name, entity.name));
+      if (aliasIndex === -1) {
+        kept.push(entity);
+        continue;
+      }
+
+      const existing = kept[aliasIndex];
+      const existingScore = (existing.description ? 1 : 0) + (existing.category ? 1 : 0);
+      const entityScore = (entity.description ? 1 : 0) + (entity.category ? 1 : 0);
+
+      let winner = existing;
+      let loser = entity;
+      if (entityScore > existingScore || (entityScore === existingScore && entity.name.length > existing.name.length)) {
+        winner = entity;
+        loser = existing;
+        kept[aliasIndex] = entity;
+        // Anything previously merged onto the old winner now belongs to the new one.
+        for (const [droppedId, keptId] of idRemap) {
+          if (keptId === loser.id) idRemap.set(droppedId, winner.id);
+        }
+      }
+
+      if (!winner.description && loser.description) winner.description = loser.description;
+      if (!winner.category && loser.category) winner.category = loser.category;
+      idRemap.set(loser.id, winner.id);
+    }
+
+    if (idRemap.size === 0) continue;
+
+    extracted[key] = kept;
+    for (const rel of extracted.relationships || []) {
+      if (idRemap.has(rel.source)) rel.source = idRemap.get(rel.source);
+      if (idRemap.has(rel.target)) rel.target = idRemap.get(rel.target);
+    }
+  }
+
+  // A merge can leave behind self-loops or exact-duplicate relationships
+  // (e.g. two aliases that both depended on the same third node) — drop them.
+  const seenRel = new Set();
+  extracted.relationships = (extracted.relationships || []).filter((rel) => {
+    if (rel.source === rel.target) return false;
+    const relKey = `${rel.source}|${rel.target}|${rel.type}`;
+    if (seenRel.has(relKey)) return false;
+    seenRel.add(relKey);
+    return true;
+  });
+
+  return extracted;
+}
+
+// ─── Service vs. Job Naming Convention (Architecture Map) ──────────────────────
+// Once categories are resolved, any service classified as "Background
+// Processing" (the family behind the map's "Jobs" badge) gets its name
+// normalized to say so, unless its name already signals that on its own
+// (e.g. already contains "Worker"/"Scheduler"/"Cron"...). A generic trailing
+// role word like "Service"/"API" is replaced with "Job" rather than
+// stacked on top of it, so "Shipment Synchronization Service" becomes
+// "Shipment Synchronization Job", not "...Service Job". Never touches
+// vendors/databases or any other category — purely a Service→Job naming fix.
+const JOB_NAME_SIGNAL_WORDS = ["job", "jobs", "worker", "workers", "scheduler", "cron", "batch", "pipeline", "daemon", "task"];
+const TRAILING_ROLE_WORDS_TO_REPLACE = new Set(["service", "api", "application", "app", "system", "platform", "microservice", "module", "component", "engine", "process"]);
+
+function applyJobNamingConvention(extracted) {
+  const jobCategory = CATEGORY_DOMAIN_FAMILIES.background.service; // "Background Processing"
+  for (const entity of extracted.services || []) {
+    if (entity.category !== jobCategory) continue;
+    if (JOB_NAME_SIGNAL_WORDS.some((w) => nameMatchesKeyword(entity.name, w))) continue;
+
+    const words = entity.name.trim().split(/\s+/);
+    const lastWord = words[words.length - 1];
+    if (words.length > 1 && TRAILING_ROLE_WORDS_TO_REPLACE.has(lastWord.toLowerCase())) {
+      words[words.length - 1] = "Job";
+      entity.name = words.join(" ");
+    } else {
+      entity.name = `${entity.name} Job`;
+    }
+  }
+  return extracted;
+}
+
 // ─── AuraDB Storage ───────────────────────────────────────────────────────────
 
 const driver = neo4j.driver(
@@ -384,9 +802,9 @@ async function storeInAuraDB(data) {
 
         await session.run(
           `MERGE (n:${label} {id: $id})
-           ON CREATE SET n.name = $name, n.createdAt = timestamp()
-           ON MATCH  SET n.name = $name, n.updatedAt = timestamp()`,
-          { id: entity.id, name: entity.name }
+           ON CREATE SET n.name = $name, n.category = $category, n.description = $description, n.createdAt = timestamp()
+           ON MATCH  SET n.name = $name, n.category = $category, n.description = $description, n.updatedAt = timestamp()`,
+          { id: entity.id, name: entity.name, category: entity.category || null, description: entity.description || null }
         );
         console.log(`[AuraDB] ✓ MERGE ${label}: "${entity.name}" (${entity.id})`);
       }
@@ -658,6 +1076,21 @@ app.post("/api/upload", upload.any(), async (req, res) => {
     // referencing entities from other documents are validated against the union.
     const extracted = sanitizeEntities(accumulator);
 
+    // Collapse near-duplicate entities (e.g. "Admin Dashboard" vs "Admin
+    // Dashboard Service" from two different documents) into one, before
+    // anything downstream counts/categorizes/displays them.
+    mergeAliasedEntities(extracted);
+
+    // Resolve a functional "category" for every service/vendor/database now
+    // that we can see the full merged relationship graph (see "Category
+    // Inference (Architecture Map)" section above).
+    enrichDescriptions(extracted);
+    enrichCategories(extracted);
+
+    // Services resolved to the "Background Processing" (Jobs) category get
+    // a naming convention applied so the map's label matches its category.
+    applyJobNamingConvention(extracted);
+
     await clearAuraDB();
     await storeInAuraDB(extracted);
 
@@ -704,10 +1137,10 @@ async function fetchGraphFromNeo4j() {
   const session = driver.session();
   try {
     const nodesRes = await session.run(
-      `MATCH (n) RETURN labels(n) AS labels, n.id AS id, n.name AS name`
+      `MATCH (n) RETURN labels(n) AS labels, n.id AS id, n.name AS name, n.category AS category, n.description AS description`
     );
     const relsRes = await session.run(
-      `MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS type`
+      `MATCH (a)-[r]->(b) RETURN DISTINCT a.id AS source, b.id AS target, type(r) AS type`
     );
 
     const nodes = nodesRes.records
@@ -719,6 +1152,8 @@ async function fetchGraphFromNeo4j() {
           id: r.get("id"),
           type: LABEL_TO_TYPE[label] || label,
           name: r.get("name") || r.get("id"),
+          category: r.get("category") || null,
+          description: r.get("description") || null,
           status: "healthy",
         };
       });
@@ -770,6 +1205,44 @@ function deriveStatus(nodes, relationships) {
   for (const node of nodes) {
     if (criticalIds.has(node.id)) node.status = "critical";
     else if (reachesCritical(node.id)) node.status = "warning";
+  }
+}
+
+// Architecture-Map-only status derivation. `deriveStatus` above is shared by
+// Org Intelligence and Runbooks and is intentionally left untouched so
+// nothing about those pages changes. This variant powers only the
+// Architecture Map (/api/graph) and the Node Inspector (/api/node-inspector):
+// a node the transitively depends on ANY critical node was being marked
+// "warning" there too, which is why nearly every card showed "Elevated
+// Latency" — in a well-connected graph almost everything is transitively
+// downstream of *something*. Real dependency-health dashboards only light
+// up the node that's actually failing (critical) and the nodes directly
+// touching it (warning); the existing Blast Radius panel already shows the
+// full transitive picture separately, so the per-node badge doesn't need
+// to repeat it. Still driven entirely by the live graph + uploaded incident
+// history — nothing hardcoded.
+function deriveArchitectureMapStatus(nodes, relationships) {
+  const criticalIds = new Set(
+    relationships.filter((r) => r.type === "CAUSED_BY").map((r) => r.target)
+  );
+  if (criticalIds.size === 0) return;
+
+  // Only DIRECT (one-hop) dependents of a critical node — a service that
+  // depends on it, or depends on a critical vendor/database — are flagged
+  // as "warning". Everything further downstream stays healthy unless it has
+  // its own direct exposure to a critical node.
+  const directWarningIds = new Set();
+  for (const rel of relationships) {
+    if (!DEPENDENCY_REL_TYPES.has(rel.type)) continue;
+    if (criticalIds.has(rel.target) && !criticalIds.has(rel.source)) {
+      directWarningIds.add(rel.source);
+    }
+  }
+
+  for (const node of nodes) {
+    if (criticalIds.has(node.id)) node.status = "critical";
+    else if (directWarningIds.has(node.id)) node.status = "warning";
+    // else: stays "healthy" (the default fetchGraphFromNeo4j already set).
   }
 }
 
@@ -1898,7 +2371,7 @@ app.get("/api/graph", async (_req, res) => {
     const graph = await fetchGraphFromNeo4j();
     // Return live data even if empty — let the frontend show the EmptyState.
     // Only fall back to mock on a genuine Neo4j connectivity failure.
-    deriveStatus(graph.nodes, graph.relationships);
+    deriveArchitectureMapStatus(graph.nodes, graph.relationships);
 
     // Engineer/Incident/Runbook are operational/meta nodes (used by org
     // intelligence, incident correlation, etc. elsewhere) — they don't belong
@@ -2023,6 +2496,217 @@ app.post("/api/impact", async (req, res) => {
       503,
       "IMPACT_UNAVAILABLE",
       "Blast-radius impact could not be computed. The dependency graph may be empty or unreachable."
+    );
+  }
+});
+
+// ─── GET /api/node-inspector/:nodeId ───────────────────────────────────────────
+// Powers the Architecture Map's Node Inspector panel. Purely additive and
+// read-only: reuses fetchGraphFromNeo4j()/deriveStatus() exactly as the rest
+// of the app does, and does not touch /api/impact's own blast-radius
+// computation or response — the frontend still calls /api/impact separately
+// for that, and may optionally pass its result here (via ?blastRadius=&
+// severity=) purely so the risk summary text stays consistent with the blast
+// radius banner already on screen. Every field is derived from the live
+// graph; nothing about a specific node is ever hardcoded.
+
+// Builds the 2-3 sentence risk summary without Gemini, strictly from the
+// real numbers already computed for this node. Used whenever GEMINI_API_KEY
+// is unset or the Gemini call fails, so the panel never blocks on the LLM.
+function buildDeterministicRiskSummary(ctx) {
+  const sentences = [];
+
+  const depWord = ctx.totalDependencyCount === 1 ? "dependency" : "dependencies";
+  const dependentWord = ctx.downstreamDependents.length === 1 ? "service" : "services";
+  sentences.push(
+    `${ctx.node.name} is classified as ${ctx.node.category || ctx.node.type}, with ${ctx.totalDependencyCount} direct ${depWord} and ${ctx.downstreamDependents.length} ${dependentWord} depending on it directly.`
+  );
+
+  if (typeof ctx.blastRadius === "number") {
+    sentences.push(
+      ctx.blastRadius > 0
+        ? `If it fails, the impact would transitively reach ${ctx.blastRadius} downstream node${ctx.blastRadius === 1 ? "" : "s"}${ctx.severity ? `, a ${ctx.severity}-severity blast radius` : ""}.`
+        : `It currently has no downstream dependents in the graph, so a failure would stay isolated.`
+    );
+  }
+
+  if (typeof ctx.recentIncidentCount === "number") {
+    sentences.push(
+      ctx.recentIncidentCount > 0
+        ? `It has been linked to ${ctx.recentIncidentCount} incident${ctx.recentIncidentCount === 1 ? "" : "s"} in the uploaded incident history.`
+        : `No incidents in the uploaded incident history have been traced back to it.`
+    );
+  }
+
+  return sentences.join(" ");
+}
+
+// Gemini-backed risk summary, grounded strictly in the facts passed in
+// `ctx` (never anything invented). Falls back to the deterministic template
+// above whenever Gemini is unavailable, errors, or returns something unusable.
+async function generateNodeRiskSummary(ctx) {
+  if (!process.env.GEMINI_API_KEY) return buildDeterministicRiskSummary(ctx);
+
+  try {
+    const facts = [
+      `Node: ${ctx.node.name}`,
+      `Category: ${ctx.node.category || ctx.node.type}`,
+      `Current health status: ${ctx.node.status}`,
+      `Owner team: ${ctx.ownerTeam || "not specified in the uploaded documents"}`,
+      `Direct dependencies (${ctx.directDependencies.length}): ${ctx.directDependencies.map((d) => d.name).join(", ") || "none"}`,
+      `Direct downstream dependents (${ctx.downstreamDependents.length}): ${ctx.downstreamDependents.map((d) => d.name).join(", ") || "none"}`,
+      typeof ctx.blastRadius === "number" ? `Total transitive blast radius: ${ctx.blastRadius} node(s)${ctx.severity ? ` (${ctx.severity} severity)` : ""}` : null,
+      typeof ctx.recentIncidentCount === "number" ? `Incidents traced back to this node: ${ctx.recentIncidentCount}` : null,
+    ].filter(Boolean).join("\n");
+
+    const prompt = `You are an SRE assistant writing a short risk summary for one node in a live dependency graph.
+
+FACTS (this is the complete set of facts — do not invent anything beyond it):
+${facts}
+
+Write exactly 2-3 plain sentences summarizing the operational risk this node represents, grounded strictly in the facts above. No markdown, no bullet points, no headings, no preamble — plain prose only.`;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = (result.response.text() || "")
+      .replace(/```[a-z]*\s*/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    return text || buildDeterministicRiskSummary(ctx);
+  } catch (err) {
+    console.warn("[NodeInspector] Gemini risk summary failed, using deterministic fallback:", err.message);
+    return buildDeterministicRiskSummary(ctx);
+  }
+}
+
+function toInspectorNode(n) {
+  return { id: n.id, name: n.name, type: n.type, category: n.category || null };
+}
+
+// A single dependency can be reached through more than one relationship
+// type at once (e.g. a node extracted as both a DEPENDS_ON and a USES edge
+// to the same vendor/database — different documents describing the same
+// real dependency differently). Without this, that one dependency would be
+// counted/listed twice. Dedupes by node id, keeping the first occurrence,
+// so every connected node appears exactly once regardless of how many
+// distinct relationship types or graph paths connect it.
+function dedupeById(nodes) {
+  const seen = new Set();
+  const unique = [];
+  for (const n of nodes) {
+    if (seen.has(n.id)) continue;
+    seen.add(n.id);
+    unique.push(n);
+  }
+  return unique;
+}
+
+app.get("/api/node-inspector/:nodeId", async (req, res) => {
+  const { nodeId } = req.params;
+  const blastRadiusParam = req.query.blastRadius !== undefined ? Number(req.query.blastRadius) : null;
+  const blastRadius = Number.isFinite(blastRadiusParam) ? blastRadiusParam : null;
+  const severity = typeof req.query.severity === "string" ? req.query.severity : null;
+
+  if (!nodeId) {
+    return structuredError(res, 400, "NODE_ID_REQUIRED", "A node id is required to load the Node Inspector.");
+  }
+
+  try {
+    const graph = await fetchGraphFromNeo4j();
+    if (!graph.nodes.length) throw new Error("empty graph");
+
+    // Same status derivation the map itself uses, so the inspector always
+    // agrees with the card colors on screen.
+    deriveArchitectureMapStatus(graph.nodes, graph.relationships);
+
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const targetNode = byId.get(nodeId);
+    if (!targetNode) {
+      return structuredError(res, 404, "NODE_NOT_FOUND", `No node with id "${nodeId}" was found in the graph.`);
+    }
+
+    const directDependencies = dedupeById(
+      graph.relationships
+        .filter((r) => r.source === nodeId && DEPENDENCY_REL_TYPES.has(r.type))
+        .map((r) => byId.get(r.target))
+        .filter(Boolean)
+        .map(toInspectorNode)
+    );
+
+    const downstreamDependents = dedupeById(
+      graph.relationships
+        .filter((r) => r.target === nodeId && DEPENDENCY_REL_TYPES.has(r.type))
+        .map((r) => byId.get(r.source))
+        .filter(Boolean)
+        .map(toInspectorNode)
+    );
+
+    const ownerRel = graph.relationships.find((r) => r.source === nodeId && r.type === "OWNED_BY");
+    const ownerTeam = ownerRel ? (byId.get(ownerRel.target)?.name || null) : null;
+
+    // directDependencies is already deduped by node id above, so this stays unique too.
+    const relatedVendorsAndDatabases = directDependencies.filter(
+      (d) => d.type === "Vendor" || d.type === "Database"
+    );
+
+    // Only claim "0 incidents" when incident data actually exists in the
+    // uploaded corpus — otherwise this is genuinely unavailable, not zero.
+    // Deduped by incident id in case the same incident was linked to this
+    // node via more than one relationship.
+    const hasIncidentData = graph.nodes.some((n) => n.type === "Incident");
+    const recentIncidentCount = hasIncidentData
+      ? new Set(
+          graph.relationships
+            .filter((r) => r.type === "CAUSED_BY" && r.target === nodeId)
+            .map((r) => r.source)
+        ).size
+      : null;
+
+    // Unique dependency count only — matches the deduped list above, not
+    // the raw (possibly multi-edge) relationship count.
+    const totalDependencyCount = directDependencies.length;
+
+    const riskSummary = await generateNodeRiskSummary({
+      node: targetNode,
+      ownerTeam,
+      directDependencies,
+      downstreamDependents,
+      totalDependencyCount,
+      recentIncidentCount,
+      blastRadius,
+      severity,
+    });
+
+    console.log(`[NodeInspector] ✓ ${targetNode.name} — ${totalDependencyCount} direct dep(s), ${downstreamDependents.length} dependent(s)`);
+
+    return res.json({
+      success: true,
+      node: {
+        id: targetNode.id,
+        name: targetNode.name,
+        type: targetNode.type,
+        category: targetNode.category || null,
+        status: targetNode.status || "healthy",
+        description: targetNode.description || null,
+        ownerTeam,
+        directDependencies,
+        downstreamDependents,
+        totalDependencyCount,
+        relatedVendorsAndDatabases,
+        recentIncidentCount,
+        riskSummary,
+      },
+    });
+  } catch (err) {
+    console.warn("[NodeInspector] ⚠ Falling back to mock:", err.message);
+    const mock = loadMock("node-inspector-success");
+    if (mock) return res.json(mock);
+    return structuredError(
+      res,
+      503,
+      "NODE_INSPECTOR_UNAVAILABLE",
+      "Node details could not be loaded. The dependency graph may be empty or unreachable."
     );
   }
 });

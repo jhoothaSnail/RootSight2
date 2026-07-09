@@ -77,6 +77,8 @@ export interface GraphNode {
   id: string;
   type: string; // Service | Vendor | Team | Database | ...
   name: string;
+  category?: string | null; // Functional category inferred at ingest time (e.g. "Authentication & Identity", "Payment Processor", "Cache") — used by the Architecture Map instead of guessing from the node name.
+  description?: string | null; // Short functional description inferred from the uploaded documents, if any (used by the Node Inspector).
   status?: HealthStatus;
 }
 
@@ -89,6 +91,35 @@ export interface GraphRelationship {
 export interface GraphResponse {
   nodes: GraphNode[];
   relationships: GraphRelationship[];
+}
+
+// GET /api/node-inspector/:nodeId
+export interface NodeInspectorRelatedNode {
+  id: string;
+  name: string;
+  type: string;
+  category?: string | null;
+}
+
+export interface NodeInspectorNode {
+  id: string;
+  name: string;
+  type: string;
+  category: string | null;
+  status: HealthStatus;
+  description: string | null;
+  ownerTeam: string | null;
+  directDependencies: NodeInspectorRelatedNode[];
+  downstreamDependents: NodeInspectorRelatedNode[];
+  totalDependencyCount: number;
+  relatedVendorsAndDatabases: NodeInspectorRelatedNode[];
+  recentIncidentCount: number | null; // null = incident data not present in the uploaded corpus at all
+  riskSummary: string;
+}
+
+export interface NodeInspectorResponse {
+  success: true;
+  node: NodeInspectorNode;
 }
 
 // POST /api/impact

@@ -1,11 +1,66 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Database, KeyRound, MessageSquare, CreditCard, Box, UserPlus, Globe, Building2, Server, ShieldCheck, Network as NetworkIcon, Zap, X } from 'lucide-react';
-import type { GraphNode, GraphResponse, HealthStatus, ImpactResponse } from '../types';
-import { getGraph, getImpact, ApiClientError } from '../api/client';
+import { Database, KeyRound, MessageSquare, CreditCard, Box, UserPlus, Globe, Building2, Server, ShieldCheck, Network as NetworkIcon, Zap, X, Info, Users, GitBranch, AlertTriangle } from 'lucide-react';
+import type { GraphNode, GraphResponse, HealthStatus, ImpactResponse, NodeInspectorNode } from '../types';
+import { getGraph, getImpact, getNodeInspector, ApiClientError } from '../api/client';
 import { LoadingState, ErrorState, EmptyState } from './States';
 
+// Maps a backend-inferred functional category (see enrichCategories in
+// backend/server.js) to the short badge word already used by this UI, and to
+// one of the icons already imported here. Falls back to the old name-based
+// heuristics when a node has no category yet (e.g. data ingested before this
+// change), so nothing regresses for existing graphs.
+const CATEGORY_DISPLAY: Record<string, { label: string; icon: 'database' | 'vendor' | 'gateway' | 'auth' | 'user' | 'payment' | 'comms' | 'security' | 'box' }> = {
+  'Authentication & Identity': { label: 'Auth', icon: 'auth' },
+  'Authentication & Identity Provider': { label: 'Auth', icon: 'auth' },
+  'Payment & Billing': { label: 'Finance', icon: 'payment' },
+  'Payment Processor': { label: 'Finance', icon: 'payment' },
+  'Messaging & Notifications': { label: 'Comms', icon: 'comms' },
+  'Communications Provider': { label: 'Comms', icon: 'comms' },
+  'Monitoring & Observability': { label: 'Monitoring', icon: 'security' },
+  'Logging': { label: 'Logs', icon: 'security' },
+  'Search & Discovery': { label: 'Search', icon: 'box' },
+  'Search Index': { label: 'Storage', icon: 'database' },
+  'User & Account Management': { label: 'Core', icon: 'user' },
+  'Background Processing': { label: 'Jobs', icon: 'box' },
+  'Analytics & Reporting': { label: 'Analytics', icon: 'box' },
+  'Analytics Provider': { label: 'Analytics', icon: 'box' },
+  'Core Business Logic': { label: 'Service', icon: 'box' },
+  'API Gateway': { label: 'Ingress', icon: 'gateway' },
+  'Cloud Infrastructure': { label: 'Infra', icon: 'vendor' },
+  'Storage & CDN': { label: 'Storage', icon: 'vendor' },
+  'Security & Compliance': { label: 'Security', icon: 'security' },
+  'Third-Party Integration': { label: 'Vendor', icon: 'vendor' },
+  'Relational Database': { label: 'Storage', icon: 'database' },
+  'Document / NoSQL Database': { label: 'Storage', icon: 'database' },
+  'Cache': { label: 'Storage', icon: 'database' },
+  'Message Queue / Broker': { label: 'Storage', icon: 'database' },
+  'Object Storage': { label: 'Storage', icon: 'database' },
+  'Data Warehouse': { label: 'Storage', icon: 'database' },
+  'Database': { label: 'Storage', icon: 'database' },
+};
+
+function categoryMeta(node: GraphNode) {
+  if (node.category && CATEGORY_DISPLAY[node.category]) return CATEGORY_DISPLAY[node.category];
+  return null;
+}
+
 function iconFor(node: GraphNode) {
+  const meta = categoryMeta(node);
+  if (meta) {
+    switch (meta.icon) {
+      case 'database': return <Database />;
+      case 'vendor': return <Globe />;
+      case 'gateway': return <NetworkIcon />;
+      case 'auth': return <KeyRound />;
+      case 'user': return <UserPlus />;
+      case 'payment': return <CreditCard />;
+      case 'comms': return <MessageSquare />;
+      case 'security': return <ShieldCheck />;
+      default: return <Box />;
+    }
+  }
+  // Fallback for nodes without a resolved category yet.
   const n = node.name.toLowerCase();
   if (node.type === 'Database') return <Database />;
   if (node.type === 'Vendor') return <Globe />;
@@ -32,6 +87,13 @@ const SEVERITY_META: Record<ImpactResponse['severity'], { label: string; text: s
 };
 
 function domainFor(node: GraphNode): string {
+  // Prefer the backend-inferred functional category (dynamic, works for any
+  // company/technology — see enrichCategories in backend/server.js). Only
+  // fall back to the old name-based guess if a node has no category, e.g.
+  // graphs stored before this change.
+  const meta = categoryMeta(node);
+  if (meta) return meta.label;
+
   const n = node.name.toLowerCase();
   if (node.type === 'Database') return 'Storage';
   if (n.includes('gateway')) return 'Ingress';
@@ -40,6 +102,133 @@ function domainFor(node: GraphNode): string {
   if (n.includes('notification')) return 'Comms';
   if (n.includes('registration') || n.includes('user') || n.includes('team')) return 'Core';
   return 'Service';
+}
+
+// Renders a comma-separated list of related nodes, or an honest "not
+// available" / "none found" placeholder — never fake data. `emptyIsUnknown`
+// distinguishes "we checked and there are none" (None Found) from "this
+// wasn't present in the uploaded documents at all" (Not Available).
+function RelatedList({ items }: { items: { id: string; name: string }[] }) {
+  if (items.length === 0) {
+    return <span className="text-zinc-600 italic">None found</span>;
+  }
+  return <span className="text-zinc-300">{items.map((n) => n.name).join(', ')}</span>;
+}
+
+function NodeInspectorPanel({
+  loading,
+  error,
+  node,
+  impact,
+  onClose,
+}: {
+  loading: boolean;
+  error: string | null;
+  node: NodeInspectorNode | null;
+  impact: ImpactResponse | null;
+  onClose: () => void;
+}) {
+  const status = (node?.status || 'healthy') as HealthStatus;
+  const statusColor =
+    status === 'critical' ? 'text-red-400 border-red-500/30 bg-red-500/10' :
+    status === 'warning' ? 'text-amber-400 border-amber-500/30 bg-amber-500/10' :
+    'text-teal-400 border-teal-500/30 bg-teal-500/10';
+
+  // Criticality is the same severity already computed by the existing
+  // blast-radius feature (/api/impact) — reused here rather than
+  // recomputed, so the two panels always agree.
+  const criticality = impact ? SEVERITY_META[impact.severity] : null;
+
+  return (
+    <div className="rounded border border-zinc-900 bg-[#0d0d0f] p-4 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-2 text-sm md:text-base font-mono tracking-widest uppercase text-zinc-400">
+          <Info className="w-4 h-4 text-teal-400" /> Node Inspector
+        </div>
+        <button
+          onClick={onClose}
+          className="text-zinc-500 hover:text-zinc-300 transition-colors"
+          aria-label="Close node inspector"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-xs md:text-sm font-mono text-zinc-500">Loading node details...</div>
+      ) : error ? (
+        <div className="text-xs md:text-sm font-mono text-red-400">{error}</div>
+      ) : node ? (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="font-semibold text-zinc-200 text-base md:text-lg">{node.name}</h3>
+            <span className="px-1.5 py-0.5 rounded text-[10px] md:text-xs font-mono uppercase tracking-widest font-bold border border-zinc-700 text-zinc-300 bg-zinc-800/50">
+              {node.category || node.type}
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] md:text-xs font-mono uppercase tracking-widest font-bold border ${statusColor}`}>
+              {STATUS_META[status].label}
+            </span>
+          </div>
+
+          <p className="text-xs md:text-sm text-zinc-400">
+            {node.description || <span className="text-zinc-600 italic">Not Available</span>}
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2 border-t border-zinc-800/50 text-xs md:text-sm font-mono">
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider flex items-center gap-1"><Users className="w-3 h-3" /> Owner Team</span>
+              <span className="text-zinc-300">{node.ownerTeam || <span className="text-zinc-600 italic">Not Available</span>}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Criticality Level</span>
+              <span className={criticality ? criticality.text : 'text-zinc-600 italic'}>
+                {criticality ? criticality.label : 'Not Available'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider flex items-center gap-1"><GitBranch className="w-3 h-3" /> Total Dependency Count</span>
+              <span className="text-zinc-300">{node.totalDependencyCount}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider flex items-center gap-1"><Zap className="w-3 h-3" /> Blast Radius</span>
+              <span className="text-zinc-300">
+                {impact ? `${impact.totalAffected} node${impact.totalAffected === 1 ? '' : 's'}` : <span className="text-zinc-600 italic">Not Available</span>}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Recent Incident Count</span>
+              <span className="text-zinc-300">
+                {node.recentIncidentCount === null ? <span className="text-zinc-600 italic">Not Available</span> : node.recentIncidentCount}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2 border-t border-zinc-800/50 text-xs md:text-sm font-mono">
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider">Direct Dependencies ({node.directDependencies.length})</span>
+              <RelatedList items={node.directDependencies} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider">Downstream Dependent Services ({node.downstreamDependents.length})</span>
+              <RelatedList items={node.downstreamDependents} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-zinc-500 uppercase tracking-wider">Related Vendor/Database</span>
+              <RelatedList items={node.relatedVendorsAndDatabases} />
+            </div>
+          </div>
+
+          <div className="rounded border border-zinc-800/70 bg-zinc-900/30 p-3 flex gap-2">
+            <Zap className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="text-[10px] md:text-xs font-mono uppercase tracking-widest text-zinc-500 mb-1">AI Risk Summary</div>
+              <p className="text-xs md:text-sm text-zinc-300 leading-relaxed">{node.riskSummary}</p>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 export default function Architecture() {
@@ -51,6 +240,12 @@ export default function Architecture() {
   const [impact, setImpact] = useState<ImpactResponse | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
   const [impactError, setImpactError] = useState<string | null>(null);
+
+  // Node Inspector — separate state from the blast-radius banner above, so
+  // the existing blast-radius feature is never touched by this addition.
+  const [nodeDetails, setNodeDetails] = useState<NodeInspectorNode | null>(null);
+  const [nodeDetailsLoading, setNodeDetailsLoading] = useState(false);
+  const [nodeDetailsError, setNodeDetailsError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -71,23 +266,43 @@ export default function Architecture() {
 
   const handleNodeClick = async (node: GraphNode) => {
     if (selectedNodeId === node.id) {
-      // Clicking the already-selected node clears the blast-radius view.
+      // Clicking the already-selected node clears the blast-radius view
+      // and the Node Inspector together.
       setSelectedNodeId(null);
       setImpact(null);
       setImpactError(null);
+      setNodeDetails(null);
+      setNodeDetailsError(null);
       return;
     }
     setSelectedNodeId(node.id);
     setImpact(null);
     setImpactError(null);
     setImpactLoading(true);
-    try {
-      setImpact(await getImpact(node.id));
-    } catch (err) {
-      setImpactError(err instanceof ApiClientError ? err.message : 'Could not compute blast radius for this node.');
-    } finally {
-      setImpactLoading(false);
-    }
+    setNodeDetails(null);
+    setNodeDetailsError(null);
+    setNodeDetailsLoading(true);
+    // Fetched independently/concurrently so the Node Inspector updates
+    // immediately regardless of how long the blast-radius call takes, and a
+    // failure in one panel never blocks the other.
+    void (async () => {
+      try {
+        setImpact(await getImpact(node.id));
+      } catch (err) {
+        setImpactError(err instanceof ApiClientError ? err.message : 'Could not compute blast radius for this node.');
+      } finally {
+        setImpactLoading(false);
+      }
+    })();
+    void (async () => {
+      try {
+        setNodeDetails((await getNodeInspector(node.id)).node);
+      } catch (err) {
+        setNodeDetailsError(err instanceof ApiClientError ? err.message : 'Could not load details for this node.');
+      } finally {
+        setNodeDetailsLoading(false);
+      }
+    })();
   };
 
   const affectedIdSet = useMemo(() => {
@@ -187,11 +402,27 @@ export default function Architecture() {
               </div>
             )}
 
+            {selectedNodeId && (
+              <NodeInspectorPanel
+                loading={nodeDetailsLoading}
+                error={nodeDetailsError}
+                node={nodeDetails}
+                impact={impact}
+                onClose={() => {
+                  setSelectedNodeId(null);
+                  setImpact(null);
+                  setImpactError(null);
+                  setNodeDetails(null);
+                  setNodeDetailsError(null);
+                }}
+              />
+            )}
+
             <div>
                <div className="text-sm md:text-base font-mono tracking-widest text-zinc-600 uppercase mb-5 flex items-center gap-2 border-b border-zinc-900 pb-3">
                  <Server className="w-5 h-5" /> Internal Microservices
                </div>
-               <p className="text-xs md:text-sm text-zinc-600 font-mono -mt-3 mb-4">Click any node to trace its blast radius.</p>
+               <p className="text-xs md:text-sm text-zinc-600 font-mono -mt-3 mb-4">Click any node to inspect its dependencies, blast radius, and AI insights.</p>
                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {internal.map((comp, i) => {
                   const status = (comp.status || 'healthy') as HealthStatus;
