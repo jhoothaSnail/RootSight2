@@ -34,7 +34,7 @@ const TYPE_STYLE: Record<string, { color: string; Icon: typeof Users }> = {
   Team: { color: '#a78bfa', Icon: Users },
   Service: { color: '#22d3ee', Icon: Server },
   Vendor: { color: '#4ade80', Icon: Globe },
-  Database: { color: '#fbbf24', Icon: DatabaseIcon },
+  Database: { color: '#fb923c', Icon: DatabaseIcon }, // orange — kept visually distinct from the amber used for 'Affected' severity
 };
 const DEFAULT_TYPE_STYLE = { color: '#a1a1aa', Icon: Server };
 
@@ -437,6 +437,9 @@ export default function Dashboard() {
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Service.color }} />Service</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Vendor.color }} />Vendor</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TYPE_STYLE.Database.color }} />Database</span>
+              <span className="text-zinc-700">|</span>
+              <span className="flex items-center gap-1"><svg width="14" height="8" className="shrink-0"><line x1="0" y1="4" x2="14" y2="4" stroke="#71717a" strokeWidth="1.5" /></svg>Direct Dependency</span>
+              <span className="flex items-center gap-1"><svg width="14" height="8" className="shrink-0"><line x1="0" y1="4" x2="14" y2="4" stroke="#71717a" strokeWidth="1.5" strokeDasharray="3 2" /></svg>Ownership</span>
               {analysisComplete && (
                 <>
                   <span className="text-zinc-700">|</span>
@@ -527,6 +530,26 @@ export default function Dashboard() {
                     const lines = wrapLabel(node.name);
                     return (
                       <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
+                        {isRoot && (
+                          <>
+                            <motion.rect
+                              x={-BOX_W / 2 - 4} y={-BOX_H / 2 - 4} width={BOX_W + 8} height={BOX_H + 8} rx="10"
+                              fill="none" stroke="#ef4444" strokeWidth="1.5"
+                              initial={{ opacity: 0.6 }}
+                              animate={{ opacity: [0.6, 0, 0.6], scale: [1, 1.18, 1] }}
+                              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+                              style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+                            />
+                            <motion.rect
+                              x={-BOX_W / 2 - 4} y={-BOX_H / 2 - 4} width={BOX_W + 8} height={BOX_H + 8} rx="10"
+                              fill="none" stroke="#ef4444" strokeWidth="1.5"
+                              initial={{ opacity: 0.6 }}
+                              animate={{ opacity: [0.6, 0, 0.6], scale: [1, 1.18, 1] }}
+                              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut', delay: 1.2 }}
+                              style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+                            />
+                          </>
+                        )}
                         <motion.rect
                           x={-BOX_W / 2} y={-BOX_H / 2} width={BOX_W} height={BOX_H} rx="7"
                           fill="#09090b"

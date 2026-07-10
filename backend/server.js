@@ -1533,11 +1533,13 @@ async function computeOrgIntelligence() {
   const teamOwnedIds = new Map(); // teamName -> [nodeId,...]
   const teamServiceNames = new Map(); // teamName -> [name,...] (deduped by normalized name)
   const teamServiceNameKeys = new Map(); // teamName -> Set(normalizedName) — dedup helper
+  const ownerTeamOf = new Map(); // nodeId -> owning team name (reused by criticalChains below)
   for (const rel of graph.relationships) {
     if (rel.type !== "OWNED_BY") continue;
     const team = byId.get(rel.target);
     const owned = byId.get(rel.source);
     if (!team || !owned) continue;
+    ownerTeamOf.set(owned.id, team.name);
     if (!teamOwnedIds.has(team.name)) {
       teamOwnedIds.set(team.name, []);
       teamServiceNames.set(team.name, []);
@@ -1794,12 +1796,18 @@ async function computeOrgIntelligence() {
     const nodeIds = [...group.nodeIds];
     const risk = deps.length >= 3 ? "high" : "medium";
     const paths = allChainsEndingAt(nodeIds, group.name);
+    // Distinct teams that own any node directly depending on this group —
+    // reuses the ownerTeamOf reverse map built for ownershipBurden above.
+    const affectedTeamCount = new Set(deps.map((d) => ownerTeamOf.get(d.id)).filter(Boolean)).size;
     paths.forEach((path, idx) => {
       criticalChains.push({
         id: paths.length > 1 ? `chain-${group.key}-${idx + 1}` : `chain-${group.key}`,
         path,
         risk,
         description: `${path[0]} has no resilient path when ${group.name} degrades — ${deps.length} node${deps.length === 1 ? "" : "s"} share this single dependency.`,
+        affectedServices: deps.length,
+        affectedTeams: affectedTeamCount,
+        blastRadius: blastRadius(nodeIds),
       });
     });
   }

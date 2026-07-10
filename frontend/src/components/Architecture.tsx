@@ -436,11 +436,18 @@ export default function Architecture() {
                <div className="text-sm md:text-base font-mono tracking-widest text-zinc-600 uppercase mb-5 flex items-center gap-2 border-b border-zinc-900 pb-3">
                  <Server className="w-5 h-5" /> Internal Microservices
                </div>
-               <div className="flex items-center gap-3 mb-5 px-4 py-3 rounded border border-teal-500/30 bg-teal-500/10">
-                 <Info className="w-5 h-5 text-teal-400 shrink-0" />
-                 <p className="text-sm md:text-base text-zinc-200 font-medium leading-snug">
-                   Click any node below to inspect its dependencies, blast radius, and AI insights.
-                 </p>
+               <div className="flex items-center gap-4 mb-6 px-5 py-4 rounded-lg border border-teal-500/40 bg-teal-500/10 shadow-[0_0_30px_rgba(20,184,166,0.08)]">
+                 <div className="w-10 h-10 rounded-full bg-teal-500/15 border border-teal-500/40 flex items-center justify-center shrink-0">
+                   <Info className="w-5 h-5 text-teal-400" />
+                 </div>
+                 <div>
+                   <p className="text-base md:text-lg font-display font-bold text-teal-300 uppercase tracking-wide leading-tight mb-1">
+                     Start here — click a node to inspect it
+                   </p>
+                   <p className="text-xs md:text-sm text-zinc-400 leading-snug">
+                     See its dependencies, blast radius, and AI insights instantly.
+                   </p>
+                 </div>
                </div>
                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {internal.map((comp, i) => {

@@ -11,6 +11,19 @@ const RESPONDER_BADGE: Record<string, { label: string; dot: string; text: string
   idle: { label: 'Idle', dot: 'bg-zinc-600', text: 'text-zinc-500', wrap: 'bg-zinc-800/50 border-zinc-700/50' },
 };
 
+const RISK_META: Record<string, { label: string; text: string; wrap: string }> = {
+  high: { label: 'High Risk', text: 'text-red-400', wrap: 'bg-red-500/10 border-red-500/30' },
+  medium: { label: 'Medium Risk', text: 'text-amber-400', wrap: 'bg-amber-500/10 border-amber-500/30' },
+  low: { label: 'Low Risk', text: 'text-teal-400', wrap: 'bg-teal-500/10 border-teal-500/30' },
+};
+
+const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+const PRIORITY_META: Record<string, { text: string; wrap: string; dot: string }> = {
+  high: { text: 'text-red-400', wrap: 'bg-red-500/10 border-red-500/30', dot: 'bg-red-500' },
+  medium: { text: 'text-amber-400', wrap: 'bg-amber-500/10 border-amber-500/30', dot: 'bg-amber-500' },
+  low: { text: 'text-teal-400', wrap: 'bg-teal-500/10 border-teal-500/30', dot: 'bg-teal-500' },
+};
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return (parts[0]?.[0] || '') + (parts[1]?.[0] || parts[0]?.[1] || '');
@@ -196,19 +209,44 @@ export default function OrgIntelligence() {
               <h3 className="font-mono text-xs md:text-sm lg:text-base font-semibold text-zinc-300 uppercase tracking-widest">Critical Dependency Chains</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {data.criticalChains.map((chain) => (
-                <div key={chain.id} className="p-4 rounded bg-zinc-950 border border-zinc-900">
-                  <div className="flex items-center flex-wrap gap-2 mb-3 font-mono text-xs md:text-sm">
-                    {chain.path.map((node, idx) => (
-                      <span key={idx} className="flex items-center gap-2">
-                        <span className="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300">{node}</span>
-                        {idx < chain.path.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />}
+              {data.criticalChains.map((chain) => {
+                const risk = RISK_META[chain.risk] || RISK_META.medium;
+                return (
+                  <div key={chain.id} className="p-4 rounded bg-zinc-950 border border-zinc-900 flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center flex-wrap gap-2 font-mono text-xs md:text-sm">
+                        {chain.path.map((node, idx) => (
+                          <span key={idx} className="flex items-center gap-2">
+                            <span className="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300">{node}</span>
+                            {idx < chain.path.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />}
+                          </span>
+                        ))}
+                      </div>
+                      <span className={`shrink-0 px-2 py-1 rounded border text-[10px] font-mono font-bold uppercase tracking-widest ${risk.wrap} ${risk.text}`}>
+                        {risk.label}
                       </span>
-                    ))}
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs md:text-sm font-mono">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-zinc-500 uppercase tracking-widest">Affected Services</span>
+                        <span className="text-zinc-200 font-bold">{chain.affectedServices}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-zinc-500 uppercase tracking-widest">Affected Teams</span>
+                        <span className="text-zinc-200 font-bold">{chain.affectedTeams}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-zinc-500 uppercase tracking-widest">Blast Radius</span>
+                        <span className="text-zinc-200 font-bold">{chain.blastRadius}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs md:text-sm text-zinc-400 font-mono leading-relaxed border-t border-zinc-900 pt-3">
+                      <span className="text-zinc-500 uppercase tracking-widest">Why this matters: </span>
+                      {chain.description}
+                    </p>
                   </div>
-                  <p className="text-xs md:text-sm text-zinc-500 font-mono leading-relaxed">{chain.description}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -221,12 +259,23 @@ export default function OrgIntelligence() {
               <h3 className="font-mono text-xs md:text-sm lg:text-base font-semibold text-cyan-300 uppercase tracking-widest">AI Recommendations</h3>
             </div>
             <div className="space-y-3">
-              {data.recommendations.map((rec) => (
-                <div key={rec.id} className="flex items-start gap-3 text-xs md:text-sm font-mono text-cyan-400 leading-relaxed">
-                  <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 uppercase text-[10px] tracking-widest shrink-0">{rec.priority}</span>
-                  <span className="text-zinc-300">{rec.message}</span>
-                </div>
-              ))}
+              {[...data.recommendations]
+                .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3))
+                .map((rec) => {
+                  const meta = PRIORITY_META[rec.priority] || PRIORITY_META.medium;
+                  const parts = rec.message.split(' — recommended because ');
+                  const [headline, why] = parts.length === 2 ? parts : [rec.message, null];
+                  return (
+                    <div key={rec.id} className={`flex items-start gap-3 p-3 rounded border ${meta.wrap}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${meta.dot}`} />
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-[10px] font-mono font-bold uppercase tracking-widest ${meta.text}`}>{rec.priority}</span>
+                        <p className="text-xs md:text-sm text-zinc-200 font-medium leading-relaxed mt-1">{headline}.</p>
+                        {why && <p className="text-xs md:text-sm text-zinc-500 font-mono leading-relaxed mt-1">{why}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}

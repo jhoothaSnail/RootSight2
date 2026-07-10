@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, Activity, Code2, Network, TerminalSquare, Database, ShieldAlert, Server } from 'lucide-react';
+import { ArrowRight, Activity, Code2, Network, Database, ShieldAlert, Server } from 'lucide-react';
 import { Logo, Wordmark } from './Logo';
 import IntelligenceWorkspace from './IntelligenceWorkspace';
+import ProfileMenu from './ProfileMenu';
 import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
 
@@ -16,11 +17,10 @@ interface HomeProps {
 const PENDING_INTENT_KEY = 'rootsight_pending_initialize';
 
 export default function Home({ onNavigate }: HomeProps) {
-  const { isAuthenticated, isDemo, logout } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [isWorkspaceActive, setIsWorkspaceActive] = useState(false);
   const [confidence, setConfidence] = useState(91);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     const analysisTimer = setTimeout(() => {
@@ -89,10 +89,10 @@ export default function Home({ onNavigate }: HomeProps) {
         />
       </div>
 
-      <header className="relative z-10 flex items-center justify-between w-full px-8 lg:px-16 pt-8">
+      <header className="relative z-40 flex items-center justify-between w-full px-8 lg:px-16 pt-8">
         <div className="flex items-center gap-3">
-          <Logo className="w-8 h-8 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
-          <Wordmark className="font-semibold text-xl tracking-wide" />
+          <Logo className="w-10 h-10 drop-shadow-[0_0_12px_rgba(245,158,11,0.25)]" />
+          <Wordmark className="font-semibold text-2xl tracking-wide" />
         </div>
         
         <div className="flex items-center gap-4">
@@ -101,45 +101,7 @@ export default function Home({ onNavigate }: HomeProps) {
             Platform Status: Nominal
           </div>
           {isAuthenticated ? (
-            <div className="relative">
-              <button
-                onClick={() => setProfileMenuOpen((v) => !v)}
-                className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-zinc-950 font-bold text-sm uppercase tracking-wider ring-1 ring-zinc-800 hover:ring-amber-500/60 transition-all"
-                aria-label="Account menu"
-              >
-                {isDemo ? 'D' : 'U'}
-              </button>
-              {profileMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl shadow-black/40 py-2 z-50">
-                  <div className="px-4 py-2 border-b border-zinc-800">
-                    <p className="text-xs text-zinc-500 font-mono uppercase tracking-widest">Signed in</p>
-                    <p className="text-sm text-zinc-200 font-medium truncate">
-                      {isDemo ? 'Demo Workspace' : 'Your Workspace'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setProfileMenuOpen(false);
-                      onNavigate('dashboard');
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-                  >
-                    Go to Workspace
-                  </button>
-                  <button
-                    onClick={() => {
-                      setProfileMenuOpen(false);
-                      setIsWorkspaceActive(false);
-                      logout().catch(() => {});
-                      onNavigate('home');
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
-                  >
-                    Sign Out
-                  </button>
-                </div>
-              )}
-            </div>
+            <ProfileMenu onNavigate={onNavigate} onBeforeSignOut={() => setIsWorkspaceActive(false)} />
           ) : (
             <button
               onClick={() => onNavigate('login')}
@@ -199,19 +161,18 @@ export default function Home({ onNavigate }: HomeProps) {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: 0.3 }}
-                  className="flex flex-col sm:flex-row gap-5 sm:items-center"
+                  className="flex flex-col items-start gap-3"
                 >
                   <button
                     onClick={handleInitialize}
-                    className="group relative inline-flex items-center justify-center gap-3 px-8 py-4 rounded bg-gradient-to-r from-amber-500 to-orange-600 text-zinc-950 font-bold uppercase tracking-wider text-sm transition-all hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(245,158,11,0.4)] active:scale-95"
+                    className="group relative inline-flex items-center justify-center gap-3 px-10 py-4 rounded bg-gradient-to-r from-amber-500 to-orange-600 text-zinc-950 font-bold uppercase tracking-wider text-sm transition-all hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(245,158,11,0.4)] active:scale-95"
                   >
                     Initialize Analysis
                     <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
                   </button>
-                  <button className="flex items-center justify-center gap-2 px-6 py-4 border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 rounded text-zinc-300 font-bold uppercase tracking-wider text-xs transition-all backdrop-blur-sm">
-                     <TerminalSquare className="w-4 h-4 text-zinc-500" />
-                     View Documentation
-                  </button>
+                  <p className="text-xs font-mono text-zinc-500 uppercase tracking-widest">
+                    No credit card required &middot; Results in minutes
+                  </p>
                 </motion.div>
                 
                 <motion.div 
@@ -245,7 +206,7 @@ export default function Home({ onNavigate }: HomeProps) {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-                className="hidden lg:block relative flex-1 w-full max-w-[600px] xl:max-w-[800px] 2xl:max-w-[1000px] aspect-square"
+                className="hidden lg:block relative flex-1 w-full max-w-[600px] xl:max-w-[800px] 2xl:max-w-[1000px] aspect-square pointer-events-none"
               >
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.22)_0%,rgba(239,68,68,0.05)_12%,transparent_25%)] pointer-events-none z-0 mix-blend-screen" />
                  

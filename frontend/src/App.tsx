@@ -10,6 +10,7 @@ import IncidentHistory from './components/IncidentHistory';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import { Logo, Wordmark } from './components/Logo';
+import ProfileMenu from './components/ProfileMenu';
 import { useAuth } from './context/AuthContext';
 import type { ViewState } from './types';
 
@@ -18,7 +19,7 @@ const PROTECTED_VIEWS: ViewState[] = ['dashboard', 'architecture', 'runbooks', '
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('home');
   const [navCollapsed, setNavCollapsed] = useState(false);
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, isDemo, loading } = useAuth();
 
   // Guard protected areas: any workspace view requires an authenticated session.
   const isProtected = PROTECTED_VIEWS.includes(currentView);
@@ -143,7 +144,18 @@ export default function App() {
                />
             </div>
             
-            <div className="pb-6">
+            <div className="pb-6 flex flex-col gap-3">
+              <div className={`flex items-center gap-3 ${navCollapsed ? 'justify-center' : 'px-1'}`}>
+                <ProfileMenu onNavigate={handleNavClick} dropDirection="up" showGoToWorkspace={false} />
+                {!navCollapsed && (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs lg:text-sm text-zinc-300 font-medium tracking-wide truncate">
+                      {isDemo ? 'Demo Workspace' : 'Your Workspace'}
+                    </p>
+                    <p className="text-xs text-zinc-500 font-mono">Account</p>
+                  </div>
+                )}
+              </div>
               {!navCollapsed && (
                 <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg flex items-center gap-3">
                    <div className="relative flex h-2.5 w-2.5">

@@ -223,6 +223,9 @@ export interface OrgIntelligenceResponse {
     path: string[];
     risk: string;
     description: string;
+    affectedServices: number;
+    affectedTeams: number;
+    blastRadius: number;
   }[];
   recommendations: {
     id: string;
