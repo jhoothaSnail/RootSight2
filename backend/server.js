@@ -2027,6 +2027,216 @@ app.post("/api/impact", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH: insert this whole block into backend/server.js, right AFTER the
+// closing `});` of the existing `app.post("/api/impact", ...)` route and
+// BEFORE the `// ─── POST /api/simulate ───` comment block.
+//
+// It uses only things that already exist elsewhere in server.js:
+// fetchGraphFromNeo4j, deriveStatus, DEPENDENCY_REL_TYPES, structuredError,
+// loadMock, genAI — nothing new to configure.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── GET /api/node-inspector/:nodeId ───────────────────────────────────────────
+// Powers the Architecture Map's Node Inspector panel. Purely additive and
+// read-only: reuses fetchGraphFromNeo4j()/deriveStatus() exactly as the rest
+// of the app does. The frontend may optionally pass ?blastRadius=&severity=
+// (from its own /api/impact call) purely so the risk summary text stays
+// consistent with the blast-radius banner already on screen — this endpoint
+// does not compute or alter blast radius itself.
+
+// Builds the 2-3 sentence risk summary without Gemini, strictly from the
+// real numbers already computed for this node. Used whenever GEMINI_API_KEY
+// is unset or the Gemini call fails, so the panel never blocks on the LLM.
+function buildDeterministicRiskSummary(ctx) {
+  const sentences = [];
+
+  const depWord = ctx.totalDependencyCount === 1 ? "dependency" : "dependencies";
+  const dependentWord = ctx.downstreamDependents.length === 1 ? "service" : "services";
+  sentences.push(
+    `${ctx.node.name} is classified as ${ctx.node.category || ctx.node.type}, with ${ctx.totalDependencyCount} direct ${depWord} and ${ctx.downstreamDependents.length} ${dependentWord} depending on it directly.`
+  );
+
+  if (typeof ctx.blastRadius === "number") {
+    sentences.push(
+      ctx.blastRadius > 0
+        ? `If it fails, the impact would transitively reach ${ctx.blastRadius} downstream node${ctx.blastRadius === 1 ? "" : "s"}${ctx.severity ? `, a ${ctx.severity}-severity blast radius` : ""}.`
+        : `It currently has no downstream dependents in the graph, so a failure would stay isolated.`
+    );
+  }
+
+  if (typeof ctx.recentIncidentCount === "number") {
+    sentences.push(
+      ctx.recentIncidentCount > 0
+        ? `It has been linked to ${ctx.recentIncidentCount} incident${ctx.recentIncidentCount === 1 ? "" : "s"} in the uploaded incident history.`
+        : `No incidents in the uploaded incident history have been traced back to it.`
+    );
+  }
+
+  return sentences.join(" ");
+}
+
+// Gemini-backed risk summary, grounded strictly in the facts passed in
+// `ctx` (never anything invented). Falls back to the deterministic template
+// above whenever Gemini is unavailable, errors, or returns something unusable.
+async function generateNodeRiskSummary(ctx) {
+  if (!process.env.GEMINI_API_KEY) return buildDeterministicRiskSummary(ctx);
+
+  try {
+    const facts = [
+      `Node: ${ctx.node.name}`,
+      `Category: ${ctx.node.category || ctx.node.type}`,
+      `Current health status: ${ctx.node.status}`,
+      `Owner team: ${ctx.ownerTeam || "not specified in the uploaded documents"}`,
+      `Direct dependencies (${ctx.directDependencies.length}): ${ctx.directDependencies.map((d) => d.name).join(", ") || "none"}`,
+      `Direct downstream dependents (${ctx.downstreamDependents.length}): ${ctx.downstreamDependents.map((d) => d.name).join(", ") || "none"}`,
+      typeof ctx.blastRadius === "number" ? `Total transitive blast radius: ${ctx.blastRadius} node(s)${ctx.severity ? ` (${ctx.severity} severity)` : ""}` : null,
+      typeof ctx.recentIncidentCount === "number" ? `Incidents traced back to this node: ${ctx.recentIncidentCount}` : null,
+    ].filter(Boolean).join("\n");
+
+    const prompt = `You are an SRE assistant writing a short risk summary for one node in a live dependency graph.
+
+FACTS (this is the complete set of facts — do not invent anything beyond it):
+${facts}
+
+Write exactly 2-3 plain sentences summarizing the operational risk this node represents, grounded strictly in the facts above. No markdown, no bullet points, no headings, no preamble — plain prose only.`;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = (result.response.text() || "")
+      .replace(/```[a-z]*\s*/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    return text || buildDeterministicRiskSummary(ctx);
+  } catch (err) {
+    console.warn("[NodeInspector] Gemini risk summary failed, using deterministic fallback:", err.message);
+    return buildDeterministicRiskSummary(ctx);
+  }
+}
+
+function toInspectorNode(n) {
+  return { id: n.id, name: n.name, type: n.type, category: n.category || null };
+}
+
+// A single dependency can be reached through more than one relationship
+// type at once. Without this, that one dependency would be counted/listed
+// twice. Dedupes by node id, keeping the first occurrence.
+function dedupeById(nodes) {
+  const seen = new Set();
+  const unique = [];
+  for (const n of nodes) {
+    if (seen.has(n.id)) continue;
+    seen.add(n.id);
+    unique.push(n);
+  }
+  return unique;
+}
+
+app.get("/api/node-inspector/:nodeId", async (req, res) => {
+  const { nodeId } = req.params;
+  const blastRadiusParam = req.query.blastRadius !== undefined ? Number(req.query.blastRadius) : null;
+  const blastRadius = Number.isFinite(blastRadiusParam) ? blastRadiusParam : null;
+  const severity = typeof req.query.severity === "string" ? req.query.severity : null;
+
+  if (!nodeId) {
+    return structuredError(res, 400, "NODE_ID_REQUIRED", "A node id is required to load the Node Inspector.");
+  }
+
+  try {
+    const graph = await fetchGraphFromNeo4j();
+    if (!graph.nodes.length) throw new Error("empty graph");
+
+    // Same status derivation /api/graph and /api/org-intelligence use, so
+    // the inspector always agrees with the card colors on screen.
+    deriveStatus(graph.nodes, graph.relationships);
+
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const targetNode = byId.get(nodeId);
+    if (!targetNode) {
+      return structuredError(res, 404, "NODE_NOT_FOUND", `No node with id "${nodeId}" was found in the graph.`);
+    }
+
+    const directDependencies = dedupeById(
+      graph.relationships
+        .filter((r) => r.source === nodeId && DEPENDENCY_REL_TYPES.has(r.type))
+        .map((r) => byId.get(r.target))
+        .filter(Boolean)
+        .map(toInspectorNode)
+    );
+
+    const downstreamDependents = dedupeById(
+      graph.relationships
+        .filter((r) => r.target === nodeId && DEPENDENCY_REL_TYPES.has(r.type))
+        .map((r) => byId.get(r.source))
+        .filter(Boolean)
+        .map(toInspectorNode)
+    );
+
+    const ownerRel = graph.relationships.find((r) => r.source === nodeId && r.type === "OWNED_BY");
+    const ownerTeam = ownerRel ? (byId.get(ownerRel.target)?.name || null) : null;
+
+    const relatedVendorsAndDatabases = directDependencies.filter(
+      (d) => d.type === "Vendor" || d.type === "Database"
+    );
+
+    // Only claim "0 incidents" when incident data actually exists in the
+    // uploaded corpus — otherwise this is genuinely unavailable, not zero.
+    const hasIncidentData = graph.nodes.some((n) => n.type === "Incident");
+    const recentIncidentCount = hasIncidentData
+      ? new Set(
+          graph.relationships
+            .filter((r) => r.type === "CAUSED_BY" && r.target === nodeId)
+            .map((r) => r.source)
+        ).size
+      : null;
+
+    const totalDependencyCount = directDependencies.length;
+
+    const riskSummary = await generateNodeRiskSummary({
+      node: targetNode,
+      ownerTeam,
+      directDependencies,
+      downstreamDependents,
+      totalDependencyCount,
+      recentIncidentCount,
+      blastRadius,
+      severity,
+    });
+
+    console.log(`[NodeInspector] ✓ ${targetNode.name} — ${totalDependencyCount} direct dep(s), ${downstreamDependents.length} dependent(s)`);
+
+    return res.json({
+      success: true,
+      node: {
+        id: targetNode.id,
+        name: targetNode.name,
+        type: targetNode.type,
+        category: targetNode.category || null,
+        status: targetNode.status || "healthy",
+        description: targetNode.description || null,
+        ownerTeam,
+        directDependencies,
+        downstreamDependents,
+        totalDependencyCount,
+        relatedVendorsAndDatabases,
+        recentIncidentCount,
+        riskSummary,
+      },
+    });
+  } catch (err) {
+    console.warn("[NodeInspector] ⚠ Falling back to mock:", err.message);
+    const mock = loadMock("node-inspector-success");
+    if (mock) return res.json(mock);
+    return structuredError(
+      res,
+      503,
+      "NODE_INSPECTOR_UNAVAILABLE",
+      "Node details could not be loaded. The dependency graph may be empty or unreachable."
+    );
+  }
+});
+
 // ─── POST /api/simulate ──────────────────────────────────────────────────────
 
 // ─── POST /api/simulate ──────────────────────────────────────────────────────

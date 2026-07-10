@@ -15,6 +15,7 @@ import type {
   GraphResponse,
   ImpactResponse,
   IncidentsResponse,
+  NodeInspectorResponse,
   OrgIntelligenceResponse,
   RunbooksResponse,
   SimulateResponse,
@@ -25,6 +26,7 @@ import { SCENARIOS } from '../data/scenarios';
 import graphMock from '../../../shared/mocks/graph-success.json';
 import impactMock from '../../../shared/mocks/impact-success.json';
 import incidentsMock from '../../../shared/mocks/incidents-success.json';
+import nodeInspectorMock from '../../../shared/mocks/node-inspector-success.json';
 import orgMock from '../../../shared/mocks/org-intelligence-success.json';
 import runbooksMock from '../../../shared/mocks/runbooks-success.json';
 import uploadMock from '../../../shared/mocks/upload-success.json';
@@ -124,6 +126,24 @@ export function getImpact(nodeId: string): Promise<ImpactResponse> {
         body: JSON.stringify({ nodeId }),
       }),
     () => impactMock as ImpactResponse
+  );
+}
+
+// Optional blastRadius/severity are passed through only so the AI risk
+// summary text stays consistent with the blast-radius banner already shown
+// for the same node (from getImpact) — the Node Inspector does not
+// recompute or alter blast radius itself.
+export function getNodeInspector(
+  nodeId: string,
+  context?: { blastRadius?: number; severity?: string }
+): Promise<NodeInspectorResponse> {
+  const params = new URLSearchParams();
+  if (context?.blastRadius !== undefined) params.set('blastRadius', String(context.blastRadius));
+  if (context?.severity) params.set('severity', context.severity);
+  const qs = params.toString();
+  return withFallback<NodeInspectorResponse>(
+    () => apiFetch<NodeInspectorResponse>(`/api/node-inspector/${encodeURIComponent(nodeId)}${qs ? `?${qs}` : ''}`),
+    () => nodeInspectorMock as NodeInspectorResponse
   );
 }
 

@@ -143,6 +143,7 @@ export default function Dashboard() {
     graphLoading, setGraphLoading,
     graphError, setGraphError,
     scenario, setScenario,
+    scenarios, setScenarios,
     events, setEvents,
     analysis, setAnalysis,
     phase, setPhase,
@@ -163,37 +164,29 @@ export default function Dashboard() {
   }, [setGraph, setGraphLoading, setGraphError]);
 
   useEffect(() => {
-    // Always re-fetch on mount. The Dashboard fully unmounts whenever the
-    // user navigates to a different section (App.tsx keys each view by
-    // `currentView` inside AnimatePresence) and is freshly mounted again
-    // every time the user returns — including immediately after a brand new
-    // document upload. Fetching unconditionally here (instead of the old
-    // "only if I don't already have a graph" guard) guarantees the topology
-    // shown is always the CURRENT uploaded company's graph, never a stale
-    // one left over in AnalysisContext from a previous upload.
-    loadGraph();
-
-    // Clear any previous run's analysis/events too. They reference node
-    // names from whichever graph was active when they were produced — if
-    // that was a different uploaded company, leaving them in place would
-    // show a new graph next to an old root-cause explanation that no
-    // longer corresponds to it.
-    setEvents([]);
-    setAnalysis(null);
-    setPhase('idle');
-    setRunError(null);
-    // Intentionally runs once per Dashboard mount only.
+    // The graph, analysis, and events all live in AnalysisContext (above the
+    // view-switching layer), so they already survive the Dashboard unmounting
+    // when the user navigates elsewhere and mounting again when they come
+    // back. Re-fetching/resetting unconditionally here defeated that: it
+    // guaranteed a fresh load + wiped analysis on every single visit,
+    // regardless of whether anything actually changed. Only fetch when the
+    // cache is genuinely empty (first-ever visit, or right after
+    // `resetForNewAnalysis()` has been called for a brand new upload).
+    if (!graph && !graphLoading) {
+      loadGraph();
+    }
+    // Intentionally runs once per Dashboard mount only — the guard above,
+    // not this dependency array, decides whether work actually happens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Scenario list — kept local (not in AnalysisContext) so it re-fetches from
-  // scratch every time the Dashboard mounts (i.e. every time the user
-  // navigates here, including right after a fresh upload), instead of
-  // persisting stale scenarios from a previously uploaded company.
-  const [scenarios, setScenarios] = useState<string[]>([]);
+  // Scenario list now lives in AnalysisContext alongside the graph. Only
+  // fetch it when the cache is empty — after `resetForNewAnalysis()` runs
+  // for a new upload, or on the very first visit — instead of on every mount.
   const [scenariosLoading, setScenariosLoading] = useState(false);
 
   useEffect(() => {
+    if (scenarios.length > 0) return;
     let cancelled = false;
     setScenariosLoading(true);
     getScenarios()
@@ -216,7 +209,8 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-    // Intentionally runs once per Dashboard mount only.
+    // Intentionally runs once per Dashboard mount only — the guard above,
+    // not this dependency array, decides whether work actually happens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -245,7 +239,16 @@ export default function Dashboard() {
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      setZoom((z) => Math.min(2.5, Math.max(0.4, +(z - e.deltaY * 0.001).toFixed(2))));
+      // Multiplicative (percentage-based) zoom instead of additive: a single
+      // gesture feels equally responsive whether already zoomed in or out,
+      // and it scales naturally with both a mouse wheel's large per-notch
+      // delta and a trackpad's much smaller per-frame delta — the previous
+      // flat `* 0.001` step was tuned for neither and felt sluggish on both.
+      // The per-event factor is clamped so one large delta burst (e.g. a
+      // fast fling on a trackpad) can't produce a jarring, unstable jump.
+      const rawFactor = Math.exp(-e.deltaY * 0.0035);
+      const factor = Math.min(1.2, Math.max(0.83, rawFactor));
+      setZoom((z) => Math.min(2.5, Math.max(0.4, +(z * factor).toFixed(3))));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);

@@ -9,7 +9,7 @@ import Runbooks from './components/Runbooks';
 import IncidentHistory from './components/IncidentHistory';
 import Login from './components/Login';
 import Signup from './components/Signup';
-import { Logo } from './components/Logo';
+import { Logo, Wordmark } from './components/Logo';
 import { useAuth } from './context/AuthContext';
 import type { ViewState } from './types';
 
@@ -91,7 +91,7 @@ export default function App() {
             <div className="flex items-center justify-between mb-10 px-2">
                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => handleNavClick('home')} role="button">
                   <Logo className="w-8 h-8 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)] shrink-0 transition-transform group-hover:scale-105" />
-                  {!navCollapsed && <span className="font-display font-bold text-xl tracking-tight text-white whitespace-nowrap uppercase">RootSight</span>}
+                  {!navCollapsed && <Wordmark className="font-bold text-xl tracking-tight" />}
                </div>
                <button onClick={() => setNavCollapsed(!navCollapsed)} className="text-zinc-600 hover:text-zinc-300 transition-colors">
                  {navCollapsed ? <PanelLeft className="w-6 h-6 hidden md:block" /> : <PanelLeftClose className="w-6 h-6" />}
@@ -168,7 +168,7 @@ export default function App() {
           <div className="md:hidden flex items-center justify-between p-4 border-b border-zinc-900 bg-zinc-950 shrink-0">
              <div className="flex items-center gap-2">
                <Logo className="w-6 h-6 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
-               <span className="font-display font-bold md:hidden text-white uppercase tracking-tight">RootSight</span>
+               <Wordmark className="font-bold md:hidden tracking-tight" />
              </div>
              <button onClick={() => setNavCollapsed(false)} className="text-zinc-400 hover:text-white p-1">
                <PanelLeft className="w-6 h-6" />

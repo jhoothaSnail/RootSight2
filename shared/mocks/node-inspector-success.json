@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "node": {
+    "id": "auth-service",
+    "name": "Auth Service",
+    "type": "Service",
+    "category": "Authentication & Identity",
+    "status": "critical",
+    "description": "Handles login, session issuance, and password reset flows for all client applications.",
+    "ownerTeam": "Team Alpha",
+    "directDependencies": [
+      { "id": "google-oauth", "name": "Google OAuth", "type": "Vendor", "category": "Authentication & Identity Provider" },
+      { "id": "postgresql", "name": "PostgreSQL", "type": "Database", "category": "Relational Database" }
+    ],
+    "downstreamDependents": [
+      { "id": "login-service", "name": "Login Service", "type": "Service", "category": "Authentication & Identity" },
+      { "id": "registration-service", "name": "Registration Service", "type": "Service", "category": "User & Account Management" },
+      { "id": "session-service", "name": "Session Service", "type": "Service", "category": "Authentication & Identity" }
+    ],
+    "totalDependencyCount": 2,
+    "relatedVendorsAndDatabases": [
+      { "id": "google-oauth", "name": "Google OAuth", "type": "Vendor", "category": "Authentication & Identity Provider" },
+      { "id": "postgresql", "name": "PostgreSQL", "type": "Database", "category": "Relational Database" }
+    ],
+    "recentIncidentCount": 2,
+    "riskSummary": "Auth Service is classified as Authentication & Identity, with 2 direct dependencies and 3 services depending on it directly. If it fails, the impact would transitively reach 10 downstream nodes, a critical-severity blast radius. It has been linked to 2 incidents in the uploaded incident history."
+  }
+}

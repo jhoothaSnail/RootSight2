@@ -7,6 +7,7 @@ import {
 import type { Runbook, RunbookPhase, ExecutionLogEntry, ExecutionRecord } from '../types';
 import { getRunbooks, getGraph, ApiClientError } from '../api/client';
 import { LoadingState, ErrorState, EmptyState } from './States';
+import { useAnalysis } from '../context/AnalysisContext';
 
 // ─── Persistence ───────────────────────────────────────────────────────────────
 
@@ -493,22 +494,24 @@ function RunbookCard({ pb, index, graph, savedRecord, onSaveRecord }: RunbookCar
 // ─── Main Runbooks Page ────────────────────────────────────────────────────────
 
 export default function Runbooks() {
-  const [playbooks, setPlaybooks] = useState<Runbook[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
-  const [graph, setGraph] = useState<GraphSnapshot | null>(null);
+  // Both runbooks and graph are shared via AnalysisContext with Dashboard and
+  // Architecture, so returning to this section reuses whatever was already
+  // loaded instead of re-fetching it. loading/error stay local — they only
+  // describe this view's own fetch-in-flight UI.
+  const { runbooks: playbooks, setRunbooks: setPlaybooks, runbooksError, setRunbooksError, graph, setGraph } = useAnalysis();
+  const [loading, setLoading] = useState(() => playbooks.length === 0 || !graph);
   const [history, setHistory] = useState<Record<string, ExecutionRecord>>(loadHistory);
+  const error = runbooksError ? { message: runbooksError } : null;
 
   const load = async () => {
     setLoading(true);
-    setError(null);
+    setRunbooksError(null);
     try {
       const [rbRes, graphRes] = await Promise.allSettled([getRunbooks(), getGraph()]);
       if (rbRes.status === 'fulfilled') setPlaybooks(rbRes.value.runbooks);
       else {
         const err = rbRes.reason;
-        if (err instanceof ApiClientError) setError({ message: err.message, code: err.code });
-        else setError({ message: 'Failed to load remediation runbooks.' });
+        setRunbooksError(err instanceof ApiClientError ? err.message : 'Failed to load remediation runbooks.');
       }
       if (graphRes.status === 'fulfilled') setGraph(graphRes.value);
     } finally {
@@ -516,7 +519,17 @@ export default function Runbooks() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (playbooks.length > 0 && graph) {
+      // Both pieces already cached — nothing to do.
+      setLoading(false);
+      return;
+    }
+    load();
+    // Intentionally runs once per mount only — the guard above, not this
+    // dependency array, decides whether a fetch actually happens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSaveRecord(record: ExecutionRecord) {
     setHistory((prev) => {

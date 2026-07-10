@@ -75,8 +75,9 @@ export interface UploadResponse {
 // GET /api/graph
 export interface GraphNode {
   id: string;
-  type: string; // Service | Vendor | Team | Database | ...
+  type: string;
   name: string;
+  category?: string | null;
   status?: HealthStatus;
 }
 
@@ -89,6 +90,35 @@ export interface GraphRelationship {
 export interface GraphResponse {
   nodes: GraphNode[];
   relationships: GraphRelationship[];
+}
+
+// GET /api/node-inspector/:nodeId
+export interface NodeInspectorRelatedNode {
+  id: string;
+  name: string;
+  type: string;
+  category?: string | null;
+}
+
+export interface NodeInspectorNode {
+  id: string;
+  name: string;
+  type: string;
+  category: string | null;
+  status: HealthStatus;
+  description: string | null;
+  ownerTeam: string | null;
+  directDependencies: NodeInspectorRelatedNode[];
+  downstreamDependents: NodeInspectorRelatedNode[];
+  totalDependencyCount: number;
+  relatedVendorsAndDatabases: NodeInspectorRelatedNode[];
+  recentIncidentCount: number | null; // null = incident data not present in the uploaded corpus at all
+  riskSummary: string;
+}
+
+export interface NodeInspectorResponse {
+  success: true;
+  node: NodeInspectorNode;
 }
 
 // POST /api/impact

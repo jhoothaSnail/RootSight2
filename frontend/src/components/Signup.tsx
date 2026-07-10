@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, Mail, Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
-import { Logo } from './Logo';
+import { Logo, Wordmark } from './Logo';
 import WorkspacePreview from './WorkspacePreview';
 import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
@@ -63,7 +63,7 @@ export default function Signup({ onNavigate }: SignupProps) {
           role="button"
         >
           <Logo className="w-8 h-8 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)] transition-transform group-hover:scale-105" />
-          <span className="font-display font-semibold text-xl tracking-wide text-zinc-100 uppercase">RootSight</span>
+          <Wordmark className="font-semibold text-xl tracking-wide" />
         </div>
 
         <div className="flex-1 flex flex-col justify-center max-w-sm w-full mx-auto">

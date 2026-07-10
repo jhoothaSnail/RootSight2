@@ -9,9 +9,9 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (email: string) => void;
-  loginDemo: () => void;
-  logout: () => void;
+  login: (email: string) => Promise<void>;
+  loginDemo: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const defaultState: AuthState = { isAuthenticated: false, isDemo: false, email: null };
@@ -44,9 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [state]);
 
-  const login = (email: string) => setState({ isAuthenticated: true, isDemo: false, email });
-  const loginDemo = () => setState({ isAuthenticated: true, isDemo: true, email: 'demo@rootsight.ai' });
-  const logout = () => setState(defaultState);
+  const login = async (email: string) => setState({ isAuthenticated: true, isDemo: false, email });
+  const loginDemo = async () => setState({ isAuthenticated: true, isDemo: true, email: 'demo@rootsight.ai' });
+  const logout = async () => setState(defaultState);
 
   return (
     <AuthContext.Provider value={{ ...state, login, loginDemo, logout }}>

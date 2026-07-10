@@ -1,13 +1,33 @@
-import { SVGProps } from "react";
+import { ImgHTMLAttributes } from "react";
 
-export function Logo(props: SVGProps<SVGSVGElement>) {
+// Real brand mark: background removed and hue-shifted from the source
+// artwork's neon cyan/orange toward the site's teal-500/amber-500 palette.
+// Aspect ratio isn't a perfect square, so callers should size via a fixed
+// height (h-*) and let width follow — object-contain keeps it undistorted
+// inside any square-ish container class already in use.
+export function Logo({ className, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
   return (
-    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-      <rect x="6" y="6" width="10" height="10" rx="2" className="fill-amber-500" />
-      <rect x="24" y="24" width="10" height="10" rx="2" className="fill-amber-500" />
-      <path d="M11 16V29C11 30.1 11.9 31 13 31H24" className="stroke-amber-500" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="miter" />
-      <circle cx="29" cy="11" r="5" className="fill-teal-500" />
-      <path d="M16 11H24" className="stroke-zinc-500" strokeWidth="2.5" strokeDasharray="3 3" strokeLinecap="round" />
-    </svg>
+    <img
+      src="/logo-icon.png"
+      alt="RootSight"
+      className={`object-contain ${className ?? ''}`}
+      {...props}
+    />
+  );
+}
+
+// The "RootSight" name on its own, styled to match the logo's wordmark:
+// Orbitron (closest available Google Font to the custom AI-generated font in
+// the source artwork — not an exact match) plus the same white "Root" /
+// teal "Sight" two-tone split. `className` controls size/weight/tracking/
+// visibility (e.g. "font-bold text-xl md:hidden") on the outer element;
+// the font-family and color split are fixed so the name reads consistently
+// everywhere it appears.
+export function Wordmark({ className = '' }: { className?: string }) {
+  return (
+    <span className={`font-wordmark uppercase whitespace-nowrap ${className}`}>
+      <span className="text-white">Root</span>
+      <span className="text-teal-400">Sight</span>
+    </span>
   );
 }

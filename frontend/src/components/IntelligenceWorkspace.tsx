@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Check, UploadCloud, FileText, Database, Activity, ArrowRight, CheckCircle2, X, FileSearch, Network, AlertTriangle } from 'lucide-react';
 import { uploadDocuments, ApiClientError, type UploadFile } from '../api/client';
 import type { UploadSummary } from '../types';
+import { useAnalysis } from '../context/AnalysisContext';
 
 interface IntelligenceWorkspaceProps {
   onComplete: () => void;
@@ -167,6 +168,7 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 export default function IntelligenceWorkspace({ onComplete }: IntelligenceWorkspaceProps) {
+  const { resetForNewAnalysis } = useAnalysis();
   const [requiredFiles, setRequiredFiles] = useState<Record<string, File | null>>({
     'arch-doc': null,
     'srv-cat': null,
@@ -184,6 +186,7 @@ export default function IntelligenceWorkspace({ onComplete }: IntelligenceWorksp
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [feed, setFeed] = useState<{ id: string, text: string, time: string }[]>([]);
+  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
 
   useEffect(() => {
     if (pipelineStage > animatedStage) {
@@ -525,7 +528,7 @@ export default function IntelligenceWorkspace({ onComplete }: IntelligenceWorksp
                 {pipelineStage === 0 && (
                   <>
                     <button
-                      onClick={startExtraction}
+                      onClick={() => setShowRebuildConfirm(true)}
                       disabled={!isRequiredComplete}
                       className={`px-6 py-3 rounded text-sm font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
                         isRequiredComplete
@@ -556,7 +559,7 @@ export default function IntelligenceWorkspace({ onComplete }: IntelligenceWorksp
                   <motion.button
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    onClick={onComplete}
+                    onClick={() => { resetForNewAnalysis(); onComplete(); }}
                     className="w-full md:w-auto px-8 py-3 rounded text-sm font-bold uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 bg-teal-500 hover:bg-teal-400 text-zinc-950 hover:shadow-[0_0_30px_rgba(20,184,166,0.3)] hover:-translate-y-0.5"
                   >
                     <span className="flex items-center gap-2"><ArrowRight className="w-4 h-4" /> Enter RootSight Platform</span>
@@ -596,6 +599,42 @@ export default function IntelligenceWorkspace({ onComplete }: IntelligenceWorksp
           </div>
         </div>
       </div>
+
+      {showRebuildConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setShowRebuildConfirm(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-lg p-6 shadow-2xl shadow-black/50"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-100">Replace Current Workspace?</h3>
+            </div>
+            <p className="text-sm text-zinc-400 leading-relaxed mb-6">
+              Starting extraction rebuilds the dependency graph from these documents, replacing the current architecture map and incident history. This can't be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowRebuildConfirm(false)}
+                className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setShowRebuildConfirm(false); startExtraction(); }}
+                className="px-4 py-2 rounded text-xs font-bold uppercase tracking-wider bg-amber-500 hover:bg-amber-400 text-zinc-950 transition-all"
+              >
+                Continue
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

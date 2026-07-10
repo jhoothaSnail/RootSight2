@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Activity, Code2, Network, TerminalSquare, Database, ShieldAlert, Server } from 'lucide-react';
-import { Logo } from './Logo';
+import { Logo, Wordmark } from './Logo';
 import IntelligenceWorkspace from './IntelligenceWorkspace';
 import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
@@ -92,7 +92,7 @@ export default function Home({ onNavigate }: HomeProps) {
       <header className="relative z-10 flex items-center justify-between w-full px-8 lg:px-16 pt-8">
         <div className="flex items-center gap-3">
           <Logo className="w-8 h-8 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
-          <span className="font-display font-semibold text-xl tracking-wide text-zinc-100 uppercase">RootSight</span>
+          <Wordmark className="font-semibold text-xl tracking-wide" />
         </div>
         
         <div className="flex items-center gap-4">
