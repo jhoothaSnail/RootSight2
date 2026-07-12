@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, LayoutDashboard, Building2, PanelLeftClose, PanelLeft, Server, BookOpen, History } from 'lucide-react';
 import Home from './components/Home';
@@ -12,14 +12,61 @@ import Signup from './components/Signup';
 import { Logo, Wordmark } from './components/Logo';
 import ProfileMenu from './components/ProfileMenu';
 import { useAuth } from './context/AuthContext';
+import { getGraph, getIncidents } from './api/client';
 import type { ViewState } from './types';
 
 const PROTECTED_VIEWS: ViewState[] = ['dashboard', 'architecture', 'runbooks', 'org', 'incidents'];
+
+type WorkspaceHealth = 'healthy' | 'attention' | 'critical';
+
+interface WorkspaceStats {
+  health: WorkspaceHealth;
+  activeIncidents: number;
+  criticalDependencies: number;
+}
+
+const HEALTH_META: Record<WorkspaceHealth, { label: string; dot: string }> = {
+  healthy: { label: 'Workspace Healthy', dot: 'bg-teal-500' },
+  attention: { label: 'Needs Attention', dot: 'bg-amber-500' },
+  critical: { label: 'Critical Risk', dot: 'bg-red-500' },
+};
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('home');
   const [navCollapsed, setNavCollapsed] = useState(false);
   const { isAuthenticated, isDemo, loading } = useAuth();
+  const [workspaceStats, setWorkspaceStats] = useState<WorkspaceStats | null>(null);
+
+  // Real workspace snapshot for the sidebar status card. Surfaces operational
+  // state (health / active incidents / critical dependencies) instead of a
+  // raw node count, which read as a database size rather than something
+  // useful for deciding whether the workspace needs attention. Fetched once
+  // per authenticated session; failures just leave the card in its loading
+  // state rather than showing a fake number.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setWorkspaceStats(null);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([getGraph(), getIncidents()])
+      .then(([graph, incidentsRes]) => {
+        if (cancelled) return;
+        const criticalDependencies = graph.nodes.filter((n) => n.status === 'critical').length;
+        const hasWarning = graph.nodes.some((n) => n.status === 'warning');
+        const activeIncidents = incidentsRes.incidents.filter((i) => !i.resolvedBy).length;
+        const health: WorkspaceHealth =
+          criticalDependencies > 0 ? 'critical' : hasWarning || activeIncidents > 0 ? 'attention' : 'healthy';
+        setWorkspaceStats({ health, activeIncidents, criticalDependencies });
+      })
+      .catch(() => {
+        // Leave workspaceStats null — the card shows a neutral loading state
+        // rather than a stale or fabricated number.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   // Guard protected areas: any workspace view requires an authenticated session.
   const isProtected = PROTECTED_VIEWS.includes(currentView);
@@ -87,9 +134,9 @@ export default function App() {
           <motion.nav 
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            className={`shrink-0 flex flex-col bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-xl border-r border-zinc-900 pt-6 px-4 transition-all duration-300 fixed md:relative h-full z-50 ${navCollapsed ? '-translate-x-full md:translate-x-0 md:w-20' : 'w-64 translate-x-0'}`}
+            className={`shrink-0 flex flex-col bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-xl border-r border-zinc-900 pt-6 px-4 transition-all duration-300 fixed md:relative h-full z-50 overflow-hidden ${navCollapsed ? '-translate-x-full md:translate-x-0 md:w-20' : 'w-64 translate-x-0'}`}
           >
-            <div className="flex items-center justify-between mb-10 px-2">
+            <div className="flex items-center justify-between mb-10 px-2 shrink-0">
                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => handleNavClick('home')} role="button">
                   <Logo className="w-8 h-8 drop-shadow-[0_0_10px_rgba(245,158,11,0.2)] shrink-0 transition-transform group-hover:scale-105" />
                   {!navCollapsed && <Wordmark className="font-bold text-xl tracking-tight" />}
@@ -99,7 +146,7 @@ export default function App() {
                </button>
             </div>
 
-            <div className="space-y-1.5 flex-1">
+            <div className="space-y-1.5 flex-1 overflow-y-auto">
                <div className="mb-4 px-2">
                   {!navCollapsed && <p className="text-xs font-mono text-zinc-500 uppercase tracking-widest font-semibold">Operations</p>}
                </div>
@@ -144,9 +191,9 @@ export default function App() {
                />
             </div>
             
-            <div className="pb-6 flex flex-col gap-3">
+            <div className="pb-6 flex flex-col gap-3 shrink-0">
               <div className={`flex items-center gap-3 ${navCollapsed ? 'justify-center' : 'px-1'}`}>
-                <ProfileMenu onNavigate={handleNavClick} dropDirection="up" showGoToWorkspace={false} />
+                <ProfileMenu onNavigate={handleNavClick} dropDirection="up" dropAlign={navCollapsed ? 'start' : 'end'} showGoToWorkspace={false} />
                 {!navCollapsed && (
                   <div className="flex-1 min-w-0">
                     <p className="text-xs lg:text-sm text-zinc-300 font-medium tracking-wide truncate">
@@ -157,14 +204,23 @@ export default function App() {
                 )}
               </div>
               {!navCollapsed && (
-                <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg flex items-center gap-3">
-                   <div className="relative flex h-2.5 w-2.5">
-                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500"></span>
+                <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg flex items-start gap-3">
+                   <div className="relative flex h-2.5 w-2.5 mt-1 shrink-0">
+                     <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${workspaceStats ? HEALTH_META[workspaceStats.health].dot : 'bg-teal-400'}`}></span>
+                     <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${workspaceStats ? HEALTH_META[workspaceStats.health].dot : 'bg-teal-500'}`}></span>
                    </div>
-                   <div className="flex-1">
-                      <p className="text-xs lg:text-sm text-zinc-300 font-medium tracking-wide">System Live</p>
-                      <p className="text-xs text-zinc-500 font-mono">Monitoring 48 nodes</p>
+                   <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-xs lg:text-sm text-zinc-300 font-medium tracking-wide">
+                        {workspaceStats ? HEALTH_META[workspaceStats.health].label : 'System Live'}
+                      </p>
+                      {workspaceStats ? (
+                        <div className="text-[11px] text-zinc-500 font-mono leading-tight space-y-0.5">
+                          <div>Active Incidents: {workspaceStats.activeIncidents}</div>
+                          <div>Critical Dependencies: {workspaceStats.criticalDependencies}</div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-zinc-500 font-mono">Loading workspace...</p>
+                      )}
                    </div>
                 </div>
               )}

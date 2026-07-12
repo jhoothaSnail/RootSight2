@@ -6,5 +6,13 @@
     "passwordHash": "ff37152a12790fb1ba9e750dfb96c30a:080538d3b257b795a9b8d923200756cf58997ab9e1a30d2dff7a1b3a65a080fd858e2682e03fb34b564c0cb97dff96c404a156e20c539ebaf52d19ebb20c31e3",
     "isDemo": true,
     "createdAt": "2026-07-08T07:07:58.328Z"
+  },
+  {
+    "id": "38aa2d3d-2aea-4568-a84a-d09dedc34ebf",
+    "name": "Snehil Yash",
+    "email": "snehil.yash13@gmail.com",
+    "passwordHash": "8214649f89bc7fb6135354d631c42330:d0a0de04f00aada672f3b0fb5abf69217490c3f87800cb9f3c5da141f21b88ec1724784471aa0ad0fc240a2dcdc5322391e6490207e517b754098423ecd3603f",
+    "isDemo": false,
+    "createdAt": "2026-07-11T19:40:17.619Z"
   }
 ]

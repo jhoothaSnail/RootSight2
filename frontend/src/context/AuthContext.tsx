@@ -1,4 +1,12 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import {
+  AUTH_TOKEN_KEY,
+  signupRequest,
+  loginRequest,
+  loginDemoRequest,
+  logoutRequest,
+  getCurrentUser,
+} from '../api/client';
 
 const STORAGE_KEY = 'rootsight_auth_state';
 
@@ -9,7 +17,12 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (email: string) => Promise<void>;
+  /** True until the cached session (if any) has been re-validated against
+   *  the backend once on load. App.tsx holds a neutral splash on this rather
+   *  than flashing Login before the check completes. */
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (name: string, email: string, password: string) => Promise<void>;
   loginDemo: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -33,8 +46,69 @@ function readStoredState(): AuthState {
   }
 }
 
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeToken(token: string) {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    // Storage unavailable (private browsing, etc.) — session won't survive refresh.
+  }
+}
+
+function clearToken() {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    // Nothing further to do — there was never a persisted token to worry about.
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() => readStoredState());
+  const [loading, setLoading] = useState(true);
+
+  // On mount, re-validate any cached session against the backend rather than
+  // trusting the localStorage flags on faith — a token can expire (30-day
+  // TTL) or be invalidated by a server restart between visits.
+  useEffect(() => {
+    let cancelled = false;
+    const token = readStoredToken();
+
+    if (!token) {
+      clearToken();
+      setState(defaultState);
+      setLoading(false);
+      return;
+    }
+
+    getCurrentUser()
+      .then((res) => {
+        if (cancelled) return;
+        setState({ isAuthenticated: true, isDemo: !!res.user.isDemo, email: res.user.email });
+      })
+      .catch(() => {
+        // Token expired/invalid, or server unreachable — drop the stale
+        // session rather than showing "authenticated" state the backend
+        // won't actually honor on the next real request.
+        if (cancelled) return;
+        clearToken();
+        setState(defaultState);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -44,12 +118,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [state]);
 
-  const login = async (email: string) => setState({ isAuthenticated: true, isDemo: false, email });
-  const loginDemo = async () => setState({ isAuthenticated: true, isDemo: true, email: 'demo@rootsight.ai' });
-  const logout = async () => setState(defaultState);
+  const login = async (email: string, password: string) => {
+    const res = await loginRequest(email, password);
+    storeToken(res.token);
+    setState({ isAuthenticated: true, isDemo: !!res.user.isDemo, email: res.user.email });
+  };
+
+  const signup = async (name: string, email: string, password: string) => {
+    const res = await signupRequest(name, email, password);
+    storeToken(res.token);
+    setState({ isAuthenticated: true, isDemo: !!res.user.isDemo, email: res.user.email });
+  };
+
+  const loginDemo = async () => {
+    const res = await loginDemoRequest();
+    storeToken(res.token);
+    setState({ isAuthenticated: true, isDemo: !!res.user.isDemo, email: res.user.email });
+  };
+
+  const logout = async () => {
+    try {
+      await logoutRequest();
+    } catch {
+      // Session may already be expired server-side — clear local state regardless.
+    }
+    clearToken();
+    setState(defaultState);
+  };
 
   return (
-    <AuthContext.Provider value={{ ...state, login, loginDemo, logout }}>
+    <AuthContext.Provider value={{ ...state, loading, login, signup, loginDemo, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -2,20 +2,16 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 async function test() {
   try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-    });
-
     const prompt = `
 You are a system architecture parser.
 
@@ -56,9 +52,12 @@ Payment Service uses Razorpay.
 Notification Service uses Twilio.
 `;
 
-    const result = await model.generateContent(prompt);
+    const result = await genAI.models.generateContent({
+      model: "gemini-flash-latest",
+      contents: prompt,
+    });
 
-    const output = result.response.text();
+    const output = result.text;
 
     console.log("\n=== GEMINI OUTPUT ===\n");
     console.log(output);

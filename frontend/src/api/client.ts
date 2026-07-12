@@ -34,6 +34,20 @@ import uploadMock from '../../../shared/mocks/upload-success.json';
 const BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 const FORCE_MOCKS: boolean = import.meta.env.VITE_USE_MOCKS === 'true';
 
+// Single source of truth for where the session token lives in localStorage —
+// AuthContext writes it here on login/signup/demo and clears it on logout;
+// every request below reads it so callers never have to attach it manually.
+export const AUTH_TOKEN_KEY = 'rootsight_auth_token';
+
+function authHeaders(): Record<string, string> {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Server responded with a structured error envelope. Surfaced to the UI. */
 export class ApiClientError extends Error {
   code: string;
@@ -55,7 +69,10 @@ class NetworkError extends Error {
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, init);
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) },
+    });
   } catch {
     throw new NetworkError(`Could not reach ${path}`);
   }
@@ -207,4 +224,58 @@ export function getIncidents(): Promise<IncidentsResponse> {
     () => apiFetch<IncidentsResponse>('/api/incidents'),
     () => incidentsMock as IncidentsResponse
   );
+}
+
+// ─── Auth ───────────────────────────────────────────────────────────────────
+// Deliberately NOT wrapped in withFallback: silently "logging in" to a mock
+// user when the server is unreachable would let someone believe they have an
+// authenticated session that the backend doesn't actually recognize. Auth
+// calls fail loudly (NetworkError / ApiClientError) and AuthContext surfaces
+// that to the sign-in form instead.
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  isDemo: boolean;
+  createdAt: string;
+}
+
+interface AuthSuccessResponse {
+  success: true;
+  token: string;
+  user: AuthUser;
+}
+
+interface MeResponse {
+  success: true;
+  user: AuthUser;
+}
+
+export function signupRequest(name: string, email: string, password: string): Promise<AuthSuccessResponse> {
+  return apiFetch<AuthSuccessResponse>('/api/auth/signup', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name, email, password }),
+  });
+}
+
+export function loginRequest(email: string, password: string): Promise<AuthSuccessResponse> {
+  return apiFetch<AuthSuccessResponse>('/api/auth/login', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function loginDemoRequest(): Promise<AuthSuccessResponse> {
+  return apiFetch<AuthSuccessResponse>('/api/auth/demo', { method: 'POST' });
+}
+
+export function logoutRequest(): Promise<{ success: true }> {
+  return apiFetch<{ success: true }>('/api/auth/logout', { method: 'POST' });
+}
+
+export function getCurrentUser(): Promise<MeResponse> {
+  return apiFetch<MeResponse>('/api/auth/me');
 }

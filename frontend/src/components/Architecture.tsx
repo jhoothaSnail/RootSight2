@@ -74,6 +74,19 @@ function iconFor(node: GraphNode) {
   return <Box />;
 }
 
+// Type accent now only tints the icon glyph itself — the badge background
+// stays neutral zinc for every type. Status (red/amber/teal) is the only
+// color that appears as a background/border anywhere on these cards, so
+// there's never a competing color signal. Database moved off orange (which
+// reads as near-identical to the amber "Warning" status at badge size) onto
+// violet, which is unambiguous against red/amber/teal at a glance.
+const TYPE_ACCENT: Record<string, { badge: string; text: string }> = {
+  Service: { badge: 'bg-zinc-800/70 ring-1 ring-zinc-700', text: 'text-blue-400' },
+  Vendor: { badge: 'bg-zinc-800/70 ring-1 ring-zinc-700', text: 'text-emerald-400' },
+  Database: { badge: 'bg-zinc-800/70 ring-1 ring-zinc-700', text: 'text-violet-400' },
+};
+const DEFAULT_TYPE_ACCENT = { badge: 'bg-zinc-800/70 ring-1 ring-zinc-700', text: 'text-zinc-400' };
+
 const STATUS_META: Record<HealthStatus, { label: string; metric: string }> = {
   critical: { label: 'Critical', metric: 'Degraded' },
   warning: { label: 'Warning', metric: 'Elevated Latency' },
@@ -342,7 +355,7 @@ export default function Architecture() {
         <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="font-display font-bold text-zinc-100 mb-1 uppercase tracking-tight text-3xl md:text-4xl lg:text-5xl">Global Architecture Map</h1>
-            <p className="font-mono text-zinc-400 text-sm md:text-base">Holistic bird's-eye view of microservice health and dependency states.</p>
+            <p className="font-mono text-zinc-400 text-sm md:text-base">See what breaks, who's affected, and how far it spreads — before it happens.</p>
           </div>
           <div className="flex gap-4 bg-[#0d0d0f] p-3 px-5 rounded border border-zinc-900">
              <div className="flex items-center gap-2 text-xs md:text-sm font-mono uppercase tracking-widest text-zinc-400"><span className="w-2.5 h-2.5 rounded-full bg-teal-500"></span> Healthy</div>
@@ -438,14 +451,14 @@ export default function Architecture() {
                </div>
                <div className="flex items-center gap-4 mb-6 px-5 py-4 rounded-lg border border-teal-500/40 bg-teal-500/10 shadow-[0_0_30px_rgba(20,184,166,0.08)]">
                  <div className="w-10 h-10 rounded-full bg-teal-500/15 border border-teal-500/40 flex items-center justify-center shrink-0">
-                   <Info className="w-5 h-5 text-teal-400" />
+                   <Zap className="w-5 h-5 text-teal-400" />
                  </div>
                  <div>
                    <p className="text-base md:text-lg font-display font-bold text-teal-300 uppercase tracking-wide leading-tight mb-1">
-                     Start here — click a node to inspect it
+                     What breaks if this fails?
                    </p>
                    <p className="text-xs md:text-sm text-zinc-400 leading-snug">
-                     See its dependencies, blast radius, and AI insights instantly.
+                     Select any service, vendor, or database to simulate failure impact and reveal dependencies, affected systems, blast radius, and AI risk insights.
                    </p>
                  </div>
                </div>
@@ -463,34 +476,35 @@ export default function Architecture() {
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleNodeClick(comp); }}
-                      className={`p-4 rounded border relative overflow-hidden flex flex-col justify-between min-h-[140px] cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${
-                        status === 'critical' ? 'bg-red-500/5 border-red-500/30 hover:border-red-500/50' :
-                        status === 'warning' ? 'bg-amber-500/5 border-amber-500/30 hover:border-amber-500/50' :
-                        'bg-[#0d0d0f] border-zinc-900 hover:border-zinc-700'
+                      className={`p-4 rounded border-y border-r relative overflow-hidden flex flex-col justify-between min-h-[140px] cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 border-l-4 ${
+                        status === 'critical' ? 'bg-red-500/[0.06] border-zinc-900 border-l-red-500 hover:border-zinc-700' :
+                        status === 'warning' ? 'bg-amber-500/[0.06] border-zinc-900 border-l-amber-500 hover:border-zinc-700' :
+                        'bg-[#0d0d0f] border-zinc-900 border-l-teal-500/40 hover:border-zinc-700'
                       } ${
                         selectedNodeId === comp.id ? 'ring-2 ring-teal-400' :
                         affectedIdSet.has(comp.id) ? 'ring-2 ring-amber-400/70' : ''
                       }`}
                     >
                       <div className="flex justify-between items-start mb-2">
-                        <div className={`p-2 rounded ${
-                          status === 'critical' ? 'bg-red-500/20 text-red-500' :
-                          status === 'warning' ? 'bg-amber-500/20 text-amber-500' :
-                          'bg-teal-500/10 text-teal-400'
-                        }`}>
+                        <div className={`p-2 rounded ${(TYPE_ACCENT[comp.type] || DEFAULT_TYPE_ACCENT).badge} ${(TYPE_ACCENT[comp.type] || DEFAULT_TYPE_ACCENT).text}`}>
                           {iconFor(comp)}
                         </div>
-                        <div className="text-xs md:text-sm uppercase font-mono tracking-widest font-bold text-zinc-600">
+                        <span className="text-xs md:text-sm uppercase font-mono tracking-widest font-bold text-zinc-500">
                           {domainFor(comp)}
-                        </div>
+                        </span>
                       </div>
                       <div>
-                        <h3 className="font-semibold text-zinc-200 text-base md:text-lg mb-1.5">{comp.name}</h3>
-                        <div className={`text-xs md:text-sm font-mono uppercase tracking-wider ${
-                          status === 'critical' ? 'text-red-400' :
-                          status === 'warning' ? 'text-amber-500' :
-                          'text-teal-500'
+                        <h3 className="font-semibold text-zinc-200 text-base md:text-lg mb-2">{comp.name}</h3>
+                        <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] md:text-xs font-mono uppercase tracking-widest font-bold ${
+                          status === 'critical' ? 'bg-red-500/15 border-red-500/30 text-red-400' :
+                          status === 'warning' ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' :
+                          'bg-teal-500/10 border-teal-500/20 text-teal-400'
                         }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            status === 'critical' ? 'bg-red-500 animate-pulse' :
+                            status === 'warning' ? 'bg-amber-500' :
+                            'bg-teal-500'
+                          }`} />
                           {meta.metric}
                         </div>
                       </div>
@@ -516,10 +530,10 @@ export default function Architecture() {
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleNodeClick(vendor); }}
-                        className={`p-4 rounded border flex flex-col justify-between gap-4 cursor-pointer transition-shadow ${
-                          isCritical ? 'bg-red-500/5 border-red-500/30' :
-                          status === 'warning' ? 'bg-amber-500/5 border-amber-500/30' :
-                          'bg-[#0d0d0f] border-zinc-900'
+                        className={`p-4 rounded border-y border-r border-l-4 flex flex-col justify-between gap-4 cursor-pointer transition-shadow ${
+                          isCritical ? 'bg-red-500/[0.06] border-zinc-900 border-l-red-500' :
+                          status === 'warning' ? 'bg-amber-500/[0.06] border-zinc-900 border-l-amber-500' :
+                          'bg-[#0d0d0f] border-zinc-900 border-l-teal-500/40'
                         } ${
                           selectedNodeId === vendor.id ? 'ring-2 ring-teal-400' :
                           affectedIdSet.has(vendor.id) ? 'ring-2 ring-amber-400/70' : ''

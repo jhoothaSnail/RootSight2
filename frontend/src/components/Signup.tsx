@@ -2,7 +2,7 @@ import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, Mail, Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { Logo, Wordmark } from './Logo';
-import WorkspacePreview from './WorkspacePreview';
+import InvestigationTimeline from './InvestigationTimeline';
 import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
 
@@ -223,7 +223,7 @@ export default function Signup({ onNavigate }: SignupProps) {
           style={{ background: 'radial-gradient(circle, rgba(20, 184, 166, 0.1) 0%, rgba(20, 184, 166, 0) 70%)' }}
         />
 
-        <WorkspacePreview />
+        <InvestigationTimeline />
       </div>
     </div>
   );

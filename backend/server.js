@@ -7,7 +7,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import neo4j from "neo4j-driver";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { PDFParse } from "pdf-parse";
 import { parse as csvParse } from "csv-parse/sync";
 import { SCENARIOS, getScenario, listScenarioNames } from "./scenarios.js";
@@ -62,6 +62,21 @@ function structuredError(res, status, code, message) {
   return res.status(status).json({ success: false, error: { code, message } });
 }
 
+// Gate for every endpoint that reads or writes the dependency graph. Reuses
+// the same session store the auth endpoints already write to — no new auth
+// mechanism. On success, req.workspaceId is the signed-in user's id, which
+// doubles as the Neo4j property every node/relationship is tagged with on
+// write and filtered by on read, so one workspace can never see or overwrite
+// another's graph.
+function requireAuth(req, res, next) {
+  const session = getSession(bearerToken(req));
+  if (!session) {
+    return structuredError(res, 401, "UNAUTHENTICATED", "Please sign in to continue.");
+  }
+  req.workspaceId = session.userId;
+  next();
+}
+
 // All relationship types accepted by the system.
 // Stored here as the single source of truth — referenced by both the prompt
 // and the validator so they can never drift apart.
@@ -100,7 +115,7 @@ const ENTITY_LABEL_MAP = {
 
 // ─── Gemini Setup ─────────────────────────────────────────────────────────────
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 function buildExtractionPrompt(text) {
   return `You are an expert system architecture and incident intelligence parser.
@@ -211,11 +226,10 @@ ${text}`;
 // ─── Gemini Extraction with Retry ─────────────────────────────────────────────
 
 async function callGemini(text, attempt = 1) {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const prompt = buildExtractionPrompt(text);
 
-  const result = await model.generateContent(prompt);
-  const raw = result.response.text();
+  const result = await genAI.models.generateContent({ model: "gemini-flash-latest", contents: prompt });
+  const raw = result.text;
 
   // Strip any accidental markdown fences Gemini sometimes adds despite instructions
   const cleaned = raw
@@ -357,21 +371,24 @@ const driver = neo4j.driver(
   neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
 );
 
-async function clearAuraDB() {
+async function clearAuraDB(workspaceId) {
   const session = driver.session();
   try {
-    await session.run(`MATCH (n) DETACH DELETE n`);
-    console.log('[AuraDB] ✓ Graph cleared — all nodes and relationships deleted');
+    await session.run(`MATCH (n {workspaceId: $workspaceId}) DETACH DELETE n`, { workspaceId });
+    console.log(`[AuraDB] ✓ Graph cleared for workspace "${workspaceId}" — nodes and relationships deleted`);
   } finally {
     await session.close();
   }
 }
 
-async function storeInAuraDB(data) {
+async function storeInAuraDB(data, workspaceId) {
   const session = driver.session();
 
   try {
-    // 1. MERGE all entity nodes for every supported label
+    // 1. MERGE all entity nodes for every supported label. workspaceId is
+    // part of the merge key (not just a property set afterward) so two
+    // workspaces can both have an entity with id "auth-service" without
+    // colliding into the same node.
     for (const [key, label] of Object.entries(ENTITY_LABEL_MAP)) {
       const entities = data[key] || [];
 
@@ -383,16 +400,16 @@ async function storeInAuraDB(data) {
         }
 
         await session.run(
-          `MERGE (n:${label} {id: $id})
+          `MERGE (n:${label} {id: $id, workspaceId: $workspaceId})
            ON CREATE SET n.name = $name, n.createdAt = timestamp()
            ON MATCH  SET n.name = $name, n.updatedAt = timestamp()`,
-          { id: entity.id, name: entity.name }
+          { id: entity.id, name: entity.name, workspaceId }
         );
-        console.log(`[AuraDB] ✓ MERGE ${label}: "${entity.name}" (${entity.id})`);
+        console.log(`[AuraDB] ✓ MERGE ${label}: "${entity.name}" (${entity.id}) [workspace ${workspaceId}]`);
       }
     }
 
-    // 2. MERGE all relationships
+    // 2. MERGE all relationships, scoped to nodes within the same workspace.
     // Only store relationships whose type is in our allowed set
     for (const rel of data.relationships || []) {
       if (!rel.source || !rel.target || !rel.type) continue;
@@ -404,12 +421,12 @@ async function storeInAuraDB(data) {
 
       try {
         await session.run(
-          `MATCH (a {id: $source})
-           MATCH (b {id: $target})
+          `MATCH (a {id: $source, workspaceId: $workspaceId})
+           MATCH (b {id: $target, workspaceId: $workspaceId})
            MERGE (a)-[:${rel.type}]->(b)`,
-          { source: rel.source, target: rel.target }
+          { source: rel.source, target: rel.target, workspaceId }
         );
-        console.log(`[AuraDB] ✓ MERGE rel: (${rel.source})-[:${rel.type}]->(${rel.target})`);
+        console.log(`[AuraDB] ✓ MERGE rel: (${rel.source})-[:${rel.type}]->(${rel.target}) [workspace ${workspaceId}]`);
       } catch (relErr) {
         // Log and continue — one bad relationship must not abort the whole batch
         console.warn(
@@ -615,7 +632,7 @@ function mergeExtracted(target, source) {
 // Accepts the finalized contract fields (architectureDoc, serviceCatalog,
 // incidentHistory) plus any additional optional documents. `upload.any()` keeps
 // the endpoint tolerant of extra sources the UI may attach.
-app.post("/api/upload", upload.any(), async (req, res) => {
+app.post("/api/upload", requireAuth, upload.any(), async (req, res) => {
   const startTime = Date.now();
   const files = req.files || [];
 
@@ -658,8 +675,8 @@ app.post("/api/upload", upload.any(), async (req, res) => {
     // referencing entities from other documents are validated against the union.
     const extracted = sanitizeEntities(accumulator);
 
-    await clearAuraDB();
-    await storeInAuraDB(extracted);
+    await clearAuraDB(req.workspaceId);
+    await storeInAuraDB(extracted, req.workspaceId);
 
     const summary = {
       success: true,
@@ -700,14 +717,16 @@ app.post("/api/upload", upload.any(), async (req, res) => {
 // Dependency edge types used when computing transitive health impact.
 const DEPENDENCY_REL_TYPES = new Set(["DEPENDS_ON", "USES_VENDOR", "USES"]);
 
-async function fetchGraphFromNeo4j() {
+async function fetchGraphFromNeo4j(workspaceId) {
   const session = driver.session();
   try {
     const nodesRes = await session.run(
-      `MATCH (n) RETURN labels(n) AS labels, n.id AS id, n.name AS name`
+      `MATCH (n {workspaceId: $workspaceId}) RETURN labels(n) AS labels, n.id AS id, n.name AS name`,
+      { workspaceId }
     );
     const relsRes = await session.run(
-      `MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS type`
+      `MATCH (a {workspaceId: $workspaceId})-[r]->(b {workspaceId: $workspaceId}) RETURN a.id AS source, b.id AS target, type(r) AS type`,
+      { workspaceId }
     );
 
     const nodes = nodesRes.records
@@ -777,13 +796,13 @@ function deriveStatus(nodes, relationships) {
 
 // Attempts a graph-traversal root cause from raw event sources. Returns a
 // contract-shaped analysis object, or null if the graph can't support it.
-async function analyzeFromGraph(events) {
+async function analyzeFromGraph(events, workspaceId) {
   const sources = [...new Set(events.map((e) => e.source).filter(Boolean))];
   if (sources.length === 0) return null;
 
   let graph;
   try {
-    graph = await fetchGraphFromNeo4j();
+    graph = await fetchGraphFromNeo4j(workspaceId);
   } catch {
     return null;
   }
@@ -970,9 +989,8 @@ Respond with ONLY a valid JSON object — no markdown, no backticks, no explanat
   "suggestedRunbook": null
 }`;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const result = await model.generateContent(prompt);
-  const raw = (result.response.text() || "").trim();
+  const result = await genAI.models.generateContent({ model: "gemini-flash-latest", contents: prompt });
+  const raw = (result.text || "").trim();
 
   try {
     const clean = raw.replace(/```json|```/g, "").trim();
@@ -1154,8 +1172,8 @@ function pickRecommendationAction(tag, name, usageCounters) {
   return list[idx].replace(/\{name\}/g, name);
 }
 
-async function computeOrgIntelligence() {
-  const graph = await fetchGraphFromNeo4j();
+async function computeOrgIntelligence(workspaceId) {
+  const graph = await fetchGraphFromNeo4j(workspaceId);
   if (graph.nodes.length < 3) throw new Error("graph too sparse for intelligence");
 
   // Reuse the exact same status derivation the graph/runbook endpoints use,
@@ -1901,9 +1919,9 @@ async function computeOrgIntelligence() {
 
 // ─── GET /api/graph ────────────────────────────────────────────────────────────
 
-app.get("/api/graph", async (_req, res) => {
+app.get("/api/graph", requireAuth, async (req, res) => {
   try {
-    const graph = await fetchGraphFromNeo4j();
+    const graph = await fetchGraphFromNeo4j(req.workspaceId);
     // Return live data even if empty — let the frontend show the EmptyState.
     // Only fall back to mock on a genuine Neo4j connectivity failure.
     deriveStatus(graph.nodes, graph.relationships);
@@ -1947,14 +1965,14 @@ function toImpactedNode(n) {
   return { id: n.id, name: n.name, type: n.type };
 }
 
-app.post("/api/impact", async (req, res) => {
+app.post("/api/impact", requireAuth, async (req, res) => {
   const { nodeId } = req.body || {};
   if (!nodeId) {
     return structuredError(res, 400, "NODE_ID_REQUIRED", "A node id is required to compute blast radius.");
   }
 
   try {
-    const graph = await fetchGraphFromNeo4j();
+    const graph = await fetchGraphFromNeo4j(req.workspaceId);
     if (!graph.nodes.length) throw new Error("empty graph");
 
     const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -2109,7 +2127,7 @@ ${facts}
 
 Write exactly 2-3 plain sentences summarizing the operational risk this node represents, grounded strictly in the facts above. No markdown, no bullet points, no headings, no preamble — plain prose only.`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
     const result = await model.generateContent(prompt);
     const text = (result.response.text() || "")
       .replace(/```[a-z]*\s*/gi, "")
@@ -2141,7 +2159,7 @@ function dedupeById(nodes) {
   return unique;
 }
 
-app.get("/api/node-inspector/:nodeId", async (req, res) => {
+app.get("/api/node-inspector/:nodeId", requireAuth, async (req, res) => {
   const { nodeId } = req.params;
   const blastRadiusParam = req.query.blastRadius !== undefined ? Number(req.query.blastRadius) : null;
   const blastRadius = Number.isFinite(blastRadiusParam) ? blastRadiusParam : null;
@@ -2152,7 +2170,7 @@ app.get("/api/node-inspector/:nodeId", async (req, res) => {
   }
 
   try {
-    const graph = await fetchGraphFromNeo4j();
+    const graph = await fetchGraphFromNeo4j(req.workspaceId);
     if (!graph.nodes.length) throw new Error("empty graph");
 
     // Same status derivation /api/graph and /api/org-intelligence use, so
@@ -2249,14 +2267,14 @@ app.get("/api/node-inspector/:nodeId", async (req, res) => {
 
 // ─── POST /api/simulate ──────────────────────────────────────────────────────
 
-app.post("/api/simulate", async (req, res) => {
+app.post("/api/simulate", requireAuth, async (req, res) => {
   const { scenario } = req.body || {};
   if (!scenario) {
     return structuredError(res, 400, "SCENARIO_NOT_FOUND", "No scenario name provided.");
   }
 
   try {
-    const graph = await fetchGraphFromNeo4j();
+    const graph = await fetchGraphFromNeo4j(req.workspaceId);
 
     if (!graph.nodes.length) throw new Error("empty graph");
 
@@ -2351,13 +2369,13 @@ app.post("/api/simulate", async (req, res) => {
 
 // Writes a completed analysis into Neo4j as an Incident node with a CAUSED_BY
 // edge to the root cause node. Fire-and-forget — never throws to caller.
-async function persistIncident(incidentId, scenario, result) {
+async function persistIncident(incidentId, scenario, result, workspaceId) {
   if (!driver) return;
   const session = driver.session();
   try {
     const rootCauseId = result.rootCause.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     await session.run(
-      `MERGE (i:Incident {id: $id})
+      `MERGE (i:Incident {id: $id, workspaceId: $workspaceId})
        ON CREATE SET
          i.name             = $name,
          i.scenario         = $scenario,
@@ -2372,6 +2390,7 @@ async function persistIncident(incidentId, scenario, result) {
        ON MATCH SET i.updatedAt = timestamp()`,
       {
         id:               incidentId,
+        workspaceId,
         name:             `${scenario || result.rootCause} Incident`,
         scenario:         scenario || result.rootCause,
         rootCause:        result.rootCause,
@@ -2386,10 +2405,10 @@ async function persistIncident(incidentId, scenario, result) {
     );
     // CAUSED_BY edge to the root cause node (best-effort — node may not exist)
     await session.run(
-      `MATCH (i:Incident {id: $incidentId})
-       MATCH (n {id: $rootCauseId})
+      `MATCH (i:Incident {id: $incidentId, workspaceId: $workspaceId})
+       MATCH (n {id: $rootCauseId, workspaceId: $workspaceId})
        MERGE (i)-[:CAUSED_BY]->(n)`,
-      { incidentId, rootCauseId }
+      { incidentId, rootCauseId, workspaceId }
     ).catch(() => {});
     console.log(`[Incidents] Persisted ${incidentId} — root cause: ${result.rootCause}`);
   } catch (err) {
@@ -2401,15 +2420,15 @@ async function persistIncident(incidentId, scenario, result) {
 
 // Queries Neo4j for a past incident sharing the same root cause.
 // Returns a HistoricalMatch object or null if none found.
-async function queryHistoricalMatch(rootCause, currentIncidentId) {
+async function queryHistoricalMatch(rootCause, currentIncidentId, workspaceId) {
   if (!driver) return null;
   const session = driver.session();
   try {
     const result = await session.run(
-      `MATCH (i:Incident)
+      `MATCH (i:Incident {workspaceId: $workspaceId})
        WHERE i.rootCause = $rootCause AND i.id <> $currentId
        RETURN i ORDER BY i.timestamp DESC LIMIT 1`,
-      { rootCause, currentId: currentIncidentId }
+      { rootCause, currentId: currentIncidentId, workspaceId }
     );
     if (result.records.length === 0) return null;
     const inc = result.records[0].get("i").properties;
@@ -2428,7 +2447,7 @@ async function queryHistoricalMatch(rootCause, currentIncidentId) {
   }
 }
 
-app.post("/api/analyze", async (req, res) => {
+app.post("/api/analyze", requireAuth, async (req, res) => {
   const { events = [], scenario } = req.body || {};
 
   if (!Array.isArray(events) || events.length === 0) {
@@ -2444,7 +2463,7 @@ app.post("/api/analyze", async (req, res) => {
     // Step 1: Always try live graph + Gemini first
     let graph = null;
     try {
-      graph = await fetchGraphFromNeo4j();
+      graph = await fetchGraphFromNeo4j(req.workspaceId);
     } catch (e) {
       console.warn("[Analyze] Neo4j unavailable:", e.message);
     }
@@ -2454,20 +2473,20 @@ app.post("/api/analyze", async (req, res) => {
       if (geminiResult) {
         console.log(`[Analyze] ✓ Gemini graph analysis — root cause: ${geminiResult.rootCause} (${geminiResult.confidence}%)`);
         const incidentId = `INC-${Math.floor(Math.random() * 900) + 100}`;
-        const historical = await queryHistoricalMatch(geminiResult.rootCause, incidentId);
+        const historical = await queryHistoricalMatch(geminiResult.rootCause, incidentId, req.workspaceId);
         geminiResult.historicalMatch = historical;
-        persistIncident(incidentId, scenario, geminiResult); // fire-and-forget
+        persistIncident(incidentId, scenario, geminiResult, req.workspaceId); // fire-and-forget
         return res.json(geminiResult);
       }
 
       // Gemini failed or returned bad JSON — fall back to graph traversal
-      const traversalResult = await analyzeFromGraph(events);
+      const traversalResult = await analyzeFromGraph(events, req.workspaceId);
       if (traversalResult) {
         console.log(`[Analyze] ✓ Graph traversal — root cause: ${traversalResult.rootCause} (${traversalResult.confidence}%)`);
         const incidentId = `INC-${Math.floor(Math.random() * 900) + 100}`;
-        const historical = await queryHistoricalMatch(traversalResult.rootCause, incidentId);
+        const historical = await queryHistoricalMatch(traversalResult.rootCause, incidentId, req.workspaceId);
         traversalResult.historicalMatch = historical;
-        persistIncident(incidentId, scenario, traversalResult); // fire-and-forget
+        persistIncident(incidentId, scenario, traversalResult, req.workspaceId); // fire-and-forget
         return res.json(traversalResult);
       }
     }
@@ -2511,7 +2530,7 @@ app.post("/api/analyze", async (req, res) => {
 // Returns all persisted incidents from Neo4j, newest first.
 // Falls back to the mock if Neo4j is unavailable.
 
-app.get("/api/incidents", async (_req, res) => {
+app.get("/api/incidents", requireAuth, async (req, res) => {
   if (!driver) {
     const mock = loadMock("incidents-success");
     if (mock) return res.json(mock);
@@ -2520,8 +2539,9 @@ app.get("/api/incidents", async (_req, res) => {
   const session = driver.session();
   try {
     const result = await session.run(
-      `MATCH (i:Incident)
-       RETURN i ORDER BY i.timestamp DESC LIMIT 50`
+      `MATCH (i:Incident {workspaceId: $workspaceId})
+       RETURN i ORDER BY i.timestamp DESC LIMIT 50`,
+      { workspaceId: req.workspaceId }
     );
     const incidents = result.records.map((r) => {
       const p = r.get("i").properties;
@@ -2560,9 +2580,9 @@ app.get("/api/incidents", async (_req, res) => {
 // Vendors and Databases become failure scenarios (e.g. "Stripe Failure").
 // Falls back to the hardcoded scenario list if the graph is unavailable.
 
-app.get("/api/scenarios", async (_req, res) => {
+app.get("/api/scenarios", requireAuth, async (req, res) => {
   try {
-    const graph = await fetchGraphFromNeo4j();
+    const graph = await fetchGraphFromNeo4j(req.workspaceId);
     if (!graph.nodes.length) throw new Error("empty graph");
 
     const scenarioNodes = graph.nodes.filter(
@@ -2587,9 +2607,9 @@ app.get("/api/scenarios", async (_req, res) => {
 
 // ─── GET /api/org-intelligence ─────────────────────────────────────────────────
 
-app.get("/api/org-intelligence", async (_req, res) => {
+app.get("/api/org-intelligence", requireAuth, async (req, res) => {
   try {
-    const data = await computeOrgIntelligence();
+    const data = await computeOrgIntelligence(req.workspaceId);
     console.log("[OrgIntel] ✓ Computed organizational intelligence");
     return res.json(data);
   } catch (err) {
@@ -2698,9 +2718,8 @@ Respond with ONLY a valid JSON object. No markdown, no backticks, no explanation
   ]
 }`;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const result = await model.generateContent(prompt);
-  const raw = (result.response.text() || "").trim();
+  const result = await genAI.models.generateContent({ model: "gemini-flash-latest", contents: prompt });
+  const text = (result.text || "")
 
   const clean = raw.replace(/```json|```/g, "").trim();
   const parsed = JSON.parse(clean);
@@ -2796,14 +2815,14 @@ function generateRunbooksDeterministic(graph) {
 
 // ─── GET /api/runbooks ─────────────────────────────────────────────────────────
 
-app.get("/api/runbooks", async (req, res) => {
+app.get("/api/runbooks", requireAuth, async (req, res) => {
   // Optional: ?rootCause=Google+OAuth  → generates runbooks focused on that incident.
   // When absent, generates general runbooks for all high-risk nodes in the graph.
   const rootCause = (req.query.rootCause || "").trim() || null;
 
   try {
     // 1. Fetch the live graph — same data source every other endpoint uses.
-    const graph = await fetchGraphFromNeo4j();
+    const graph = await fetchGraphFromNeo4j(req.workspaceId);
     deriveStatus(graph.nodes, graph.relationships);
 
     // 2. Guard: if the graph is empty, no documents have been ingested yet.

@@ -1,8 +1,9 @@
 import { useState, FormEvent } from 'react';
+import { getGraph } from '../api/client';
 import { motion } from 'motion/react';
 import { ArrowRight, Mail, Lock, Eye, EyeOff, ShieldCheck, Sparkles, Check } from 'lucide-react';
 import { Logo, Wordmark } from './Logo';
-import WorkspacePreview from './WorkspacePreview';
+import InvestigationTimeline from './InvestigationTimeline';
 import { useAuth } from '../context/AuthContext';
 import type { ViewState } from '../types';
 
@@ -29,11 +30,27 @@ export default function Login({ onNavigate }: LoginProps) {
   const [error, setError] = useState('');
 
   // If Login was reached mid "Initialize Analysis", send the user back into
-  // Home so it can resume straight into the Upload Section. Otherwise land
-  // on the Analysis Engine like a normal sign-in.
-  const navigateAfterAuth = () => {
-    const hadPendingIntent = sessionStorage.getItem(PENDING_INTENT_KEY);
-    onNavigate(hadPendingIntent ? 'home' : 'dashboard');
+  // Home so it can resume straight into the Upload Section. Otherwise, check
+  // whether this workspace actually has any uploaded knowledge yet — a
+  // returning user with an empty workspace should still land in the Upload
+  // Section rather than a blank dashboard. Reuses the same pending-intent
+  // flag so Home resumes into it exactly like the "Initialize Analysis" path.
+  const navigateAfterAuth = async () => {
+    if (sessionStorage.getItem(PENDING_INTENT_KEY)) {
+      onNavigate('home');
+      return;
+    }
+    try {
+      const graph = await getGraph();
+      if (graph.nodes.length === 0) {
+        sessionStorage.setItem(PENDING_INTENT_KEY, '1');
+        onNavigate('home');
+        return;
+      }
+    } catch {
+      // Can't tell either way — don't block sign-in on it.
+    }
+    onNavigate('dashboard');
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -48,7 +65,7 @@ export default function Login({ onNavigate }: LoginProps) {
     setIsSubmitting(true);
     try {
       await login(email.trim(), password);
-      navigateAfterAuth();
+      await navigateAfterAuth();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed. Please try again.');
     } finally {
@@ -61,7 +78,7 @@ export default function Login({ onNavigate }: LoginProps) {
     setIsDemoLoading(true);
     try {
       await loginDemo();
-      navigateAfterAuth();
+      await navigateAfterAuth();
     } catch {
       setError('Could not start the demo workspace. Please try again.');
     } finally {
@@ -242,7 +259,7 @@ export default function Login({ onNavigate }: LoginProps) {
           style={{ background: 'radial-gradient(circle, rgba(20, 184, 166, 0.1) 0%, rgba(20, 184, 166, 0) 70%)' }}
         />
 
-        <WorkspacePreview />
+        <InvestigationTimeline />
       </div>
     </div>
   );

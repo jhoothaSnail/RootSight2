@@ -1,5 +1,25 @@
 export type ViewState = 'home' | 'dashboard' | 'architecture' | 'runbooks' | 'org' | 'incidents' | 'login' | 'signup';
 
+// POST /api/auth/signup, /api/auth/login, /api/auth/demo, GET /api/auth/me
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  isDemo: boolean;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  success: true;
+  token: string;
+  user: AuthUser;
+}
+
+export interface MeResponse {
+  success: true;
+  user: AuthUser;
+}
+
 // GET /api/incidents
 export interface IncidentRecord {
   incidentId: string;
